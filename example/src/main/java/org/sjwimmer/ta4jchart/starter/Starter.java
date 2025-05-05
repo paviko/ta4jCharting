@@ -19,7 +19,7 @@ import de.sjwimmer.ta4jchart.chartbuilder.PlotType;
 import de.sjwimmer.ta4jchart.chartbuilder.TacChartBuilder;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.Theme;
 import org.ta4j.core.BarSeries;
-import org.ta4j.core.BarSeriesManager;
+import org.ta4j.core.backtest.BarSeriesManager;
 import org.ta4j.core.BaseBarSeries;
 import org.ta4j.core.BaseStrategy;
 import org.ta4j.core.Strategy;
