@@ -14,9 +14,11 @@ import java.awt.Cursor;
 import java.awt.Point;
 import java.awt.event.MouseAdapter;
 import java.awt.event.MouseEvent;
+import java.awt.event.MouseWheelEvent;
+import java.awt.event.MouseWheelListener;
 import java.awt.geom.Rectangle2D;
 
-public class PanAndShiftZoomHandler extends MouseAdapter {
+public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelListener {
 
     private final ChartPanel chartPanel;
     private final TacAutoRangeButton tacAutoRangeButton; // Can be null if not used
@@ -30,6 +32,8 @@ public class PanAndShiftZoomHandler extends MouseAdapter {
     public PanAndShiftZoomHandler(ChartPanel chartPanel, TacAutoRangeButton tacAutoRangeButton) {
         this.chartPanel = chartPanel;
         this.tacAutoRangeButton = tacAutoRangeButton;
+        // Register this handler as a mouse wheel listener
+        chartPanel.addMouseWheelListener(this);
     }
 
     @Override
@@ -169,6 +173,73 @@ public class PanAndShiftZoomHandler extends MouseAdapter {
             });
             delegatingToChartPanelZoom = false;
             // Do NOT consume the event, so ChartPanel's listener can perform the zoom.
+        }
+    }
+    
+    @Override
+    public void mouseWheelMoved(MouseWheelEvent e) {
+        // Get the chart and check if it's valid
+        JFreeChart chart = chartPanel.getChart();
+        if (chart == null) {
+            return;
+        }
+        
+        // Get the data area at the mouse position
+        Rectangle2D screenDataArea = chartPanel.getScreenDataArea(e.getX(), e.getY());
+        if (screenDataArea == null || !screenDataArea.contains(e.getPoint())) {
+            return; // Not over the plot area
+        }
+        
+        // Get the plot and domain axis
+        org.jfree.chart.plot.Plot plot = chart.getPlot();
+        ValueAxis domainAxis = null;
+        ValueAxis rangeAxis = null;
+        
+        if (plot instanceof CombinedDomainXYPlot) {
+            domainAxis = ((CombinedDomainXYPlot) plot).getDomainAxis();
+            // For CombinedDomainXYPlot, get the range axis of the subplot under the mouse
+            if (((CombinedDomainXYPlot) plot).getSubplots().size() > 0) {
+                XYPlot subplot = (XYPlot) ((CombinedDomainXYPlot) plot).getSubplots().get(0);
+                rangeAxis = subplot.getRangeAxis();
+            }
+        } else if (plot instanceof XYPlot) {
+            domainAxis = ((XYPlot) plot).getDomainAxis();
+            rangeAxis = ((XYPlot) plot).getRangeAxis();
+        }
+        
+        if (domainAxis instanceof DateAxis) {
+            DateAxis dateAxis = (DateAxis) domainAxis;
+            
+            // Get current axis range
+            double lower = dateAxis.getRange().getLowerBound();
+            double upper = dateAxis.getRange().getUpperBound();
+            double length = upper - lower;
+            
+            // Calculate zoom factor - use a smaller factor than TacZoomButtons
+            // Negative rotation = zoom in, positive rotation = zoom out
+            double zoomFactor = e.getWheelRotation() < 0 ? 0.85 : 1.15; // Smaller factor for more precise zooming
+            double newLength = length * zoomFactor;
+            
+            // Calculate the mouse position as a fraction of the data area width
+            double mouseX = e.getX();
+            double areaX = screenDataArea.getX();
+            double areaWidth = screenDataArea.getWidth();
+            double positionFactor = (mouseX - areaX) / areaWidth;
+            
+            // Calculate new bounds centered around mouse position
+            double pointOnAxis = lower + (length * positionFactor);
+            double newLower = pointOnAxis - (newLength * positionFactor);
+            double newUpper = newLower + newLength;
+            
+            // Set the new range
+            dateAxis.setRange(newLower, newUpper);
+            
+            // Handle Y-axis auto-range if needed
+            if (tacAutoRangeButton != null && tacAutoRangeButton.isSelected()) {
+                TacChartUtils.applyAutoRangeState(chart, true);
+            }
+            
+            e.consume();
         }
     }
 }
