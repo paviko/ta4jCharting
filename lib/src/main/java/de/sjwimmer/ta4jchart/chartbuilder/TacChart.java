@@ -18,11 +18,14 @@ import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.TradingRecord;
+import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
+
+import de.sjwimmer.ta4jchart.chartbuilder.mouse.PanAndShiftZoomHandler;
 
 public class TacChart extends JPanel {
 
@@ -30,6 +33,7 @@ public class TacChart extends JPanel {
     private static final double KEYBOARD_PAGE_PAN_PERCENTAGE = 0.9; // Scroll by 90% of the visible range
     private final ChartPanel chartPanel; // Make chartPanel a field to access it in handlePanning
     private final TacChartBuilder chartBuilder;
+    private final TacAutoRangeButton tacAutoRangeButton; // Store the button instance
 
     public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord, TacChartBuilder chartBuilder) {
         super(new BorderLayout());
@@ -54,7 +58,7 @@ public class TacChart extends JPanel {
         add(new JScrollPane(chartPanel), BorderLayout.CENTER);
 
         toolBar.add(new TacStickyCrossHairButton(new TacChartMouseHandler(chartPanel)));
-        TacAutoRangeButton tacAutoRangeButton = new TacAutoRangeButton(chart);
+        tacAutoRangeButton = new TacAutoRangeButton(chart);
         toolBar.add(tacAutoRangeButton);
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
         toolBar.add(new TacShowTradingRecordButton(tradingRecord, this));
@@ -65,6 +69,17 @@ public class TacChart extends JPanel {
         
         // Add zoom buttons
         new TacZoomButtons(chartPanel, tacAutoRangeButton).addToToolBar(toolBar);
+
+        // Disable default ChartPanel zoom initiated by unqualified left-click drag
+        chartPanel.setDomainZoomable(false);
+        chartPanel.setRangeZoomable(false);
+        // Mouse wheel zoom is typically enabled by default and can be kept:
+        // chartPanel.setMouseWheelEnabled(true); 
+
+        // Add custom handler for pan (left-click drag) and shift-zoom (Shift + left-click drag)
+        PanAndShiftZoomHandler panAndShiftZoomHandler = new PanAndShiftZoomHandler(chartPanel, tacAutoRangeButton);
+        chartPanel.addMouseListener(panAndShiftZoomHandler);
+        chartPanel.addMouseMotionListener(panAndShiftZoomHandler);
 
         // Add KeyListener for keyboard scrolling
         chartPanel.addKeyListener(new KeyAdapter() {
@@ -118,12 +133,9 @@ public class TacChart extends JPanel {
 
                 if (panned && tacAutoRangeButton.isSelected()) {
                     // After panning, if Y-axes are set to auto-range, force them to readjust
-                    tacAutoRangeButton.applyAutoRangeState(true);
+                    TacChartUtils.applyAutoRangeState(chartPanel.getChart(), true);
                 }
             }
         });
     }
-
-    // Methods addTimeframeButtons and addZoomButtons have been moved to separate classes
-    // TacTimeframeButtons and TacZoomButtons in the toolbar package
 }
