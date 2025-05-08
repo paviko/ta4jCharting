@@ -34,6 +34,11 @@
             <groupId>org.ta4j</groupId>
             <artifactId>ta4j-core</artifactId>
         </dependency>
+        <!-- Trading Data Stream -->
+        <dependency>
+            <groupId>com.limemojito.oss.trading.trading-data-stream</groupId>
+            <artifactId>model</artifactId>
+        </dependency>
         <dependency>
             <groupId>ch.qos.logback</groupId>
             <artifactId>logback-classic</artifactId>

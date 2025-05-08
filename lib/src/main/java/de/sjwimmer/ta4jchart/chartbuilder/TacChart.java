@@ -3,17 +3,19 @@ package de.sjwimmer.ta4jchart.chartbuilder;
 import de.sjwimmer.ta4jchart.chartbuilder.crosshair.TacChartMouseHandler;
 import de.sjwimmer.ta4jchart.chartbuilder.data.DataPanel;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
+import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacAutoRangeButton;
 import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacShowBuySellSignals;
 import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacShowDataButton;
 import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacShowTradingRecordButton;
 import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacStickyCrossHairButton;
-import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacAutoRangeButton; // <-- Import the new button
+import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacTimeframeButtons;
+import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacZoomButtons;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
-import org.jfree.chart.axis.ValueAxis; // Import ValueAxis
+import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
-import org.jfree.chart.plot.XYPlot; // Import XYPlot
+import org.jfree.chart.plot.XYPlot;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.TradingRecord;
 
@@ -21,16 +23,18 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
-import java.util.List; // Import List
 
 public class TacChart extends JPanel {
 
     private static final double KEYBOARD_PAN_PERCENTAGE = 0.1; // Scroll by 10% of the visible range
     private static final double KEYBOARD_PAGE_PAN_PERCENTAGE = 0.9; // Scroll by 90% of the visible range
     private final ChartPanel chartPanel; // Make chartPanel a field to access it in handlePanning
+    private final TacChartBuilder chartBuilder;
 
-    public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord) {
+    public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord, TacChartBuilder chartBuilder) {
         super(new BorderLayout());
+
+        this.chartBuilder = chartBuilder;
 
         // Create ChartPanel and override addNotify to request focus when it becomes displayable
         this.chartPanel = new ChartPanel(chart) {
@@ -55,6 +59,12 @@ public class TacChart extends JPanel {
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
         toolBar.add(new TacShowTradingRecordButton(tradingRecord, this));
         toolBar.add(new TacShowBuySellSignals(chart, barSeries, tradingRecord, this));
+        
+        // Add timeframe buttons if multi-timeframe series is available
+        new TacTimeframeButtons(chartBuilder, chartPanel, this).addToToolBar(toolBar);
+        
+        // Add zoom buttons
+        new TacZoomButtons(chartPanel, tacAutoRangeButton).addToToolBar(toolBar);
 
         // Add KeyListener for keyboard scrolling
         chartPanel.addKeyListener(new KeyAdapter() {
@@ -113,4 +123,7 @@ public class TacChart extends JPanel {
             }
         });
     }
+
+    // Methods addTimeframeButtons and addZoomButtons have been moved to separate classes
+    // TacTimeframeButtons and TacZoomButtons in the toolbar package
 }

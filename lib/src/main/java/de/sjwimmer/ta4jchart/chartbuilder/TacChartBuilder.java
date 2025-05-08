@@ -18,13 +18,19 @@ import org.ta4j.core.BarSeries;
 import org.ta4j.core.Indicator;
 import org.ta4j.core.TradingRecord;
 
+import com.limemojito.trading.model.bar.Bar.Period;
+
 import javax.swing.*;
 import java.awt.*;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Date;
 
 public class TacChartBuilder {
 
 	private final TacChartTheme theme;
-	private final BarSeries barSeries;
+	private BarSeries barSeries; // This will now be the BarSeries for the *current* timeframe
+	private final IBarSeriesMultiTf multiTfBarSeries; // Store the original multi-TF series
 	private TradingRecord tradingRecord;
 	private final BarSeriesConverter barSeriesConverter;
 	private final IndicatorToTimeSeriesConverter indicatorToTimeSeriesConverter;
@@ -32,6 +38,7 @@ public class TacChartBuilder {
 	private final JFreeChart chart;
 
 	private final TacDataTableModel dataTableModel = new TacDataTableModel();
+    private final List<IndicatorConfiguration.Builder<?>> indicatorConfigBuilders = new ArrayList<>(); // Store builders
 
 	private int overlayIds = 2; // 0 = ohlcv data, 1 = volume data
 
@@ -57,6 +64,11 @@ public class TacChartBuilder {
 		this.indicatorToTimeSeriesConverter = indicatorConverter;
 		this.indicatorToBarDataConverter = indicatorToBarDataConverter;
 		this.barSeries = barSeries;
+		if (barSeries instanceof IBarSeriesMultiTf) {
+			this.multiTfBarSeries = (IBarSeriesMultiTf) barSeries;
+		} else {
+			this.multiTfBarSeries = null;
+		}
 		this.chart = createCandlestickChart(this.barSeries);
 	}
 
@@ -65,8 +77,100 @@ public class TacChartBuilder {
 	 * @return a JPanel holding all ta4j-charting elements
 	 */
 	public TacChart build() {
-		return new TacChart(chart, barSeries, dataTableModel, tradingRecord);
+        // Ensure all indicators are added before building
+        for (IndicatorConfiguration.Builder<?> builder : indicatorConfigBuilders) {
+            addIndicatorToPlot(builder.build(), this.barSeries);
+        }
+		return new TacChart(chart, barSeries, dataTableModel, tradingRecord, this);
 	}
+
+    // Method to be called by TacChart for timeframe switching
+    public JFreeChart switchTimeframe(Period newTimeframe) {
+        if (this.multiTfBarSeries == null) {
+            System.err.println("Cannot switch timeframe: IBarSeriesMultiTf not provided.");
+            return this.chart;
+        }
+
+        Date oldLowerBound = null;
+        Date oldUpperBound = null;
+        CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) this.chart.getPlot();
+        ValueAxis domainAxis = combinedPlot.getDomainAxis();
+        if (domainAxis instanceof DateAxis) {
+            DateAxis dateAxis = (DateAxis) domainAxis;
+            oldLowerBound = dateAxis.getMinimumDate();
+            oldUpperBound = dateAxis.getMaximumDate();
+        }
+
+        this.barSeries = this.multiTfBarSeries.at(newTimeframe);
+        if (this.barSeries == null || this.barSeries.isEmpty()) {
+            System.err.println("Failed to get BarSeries for timeframe: " + newTimeframe.name() + " or series is empty.");
+            // Optionally, revert to a default or show an error message on chart
+            return this.chart;
+        }
+
+        // 1. Update main candlestick plot
+        XYPlot candlestickPlot = (XYPlot) combinedPlot.getSubplots().get(0);
+        DefaultHighLowDataset newCandlestickData = this.barSeriesConverter.convert(this.barSeries);
+        candlestickPlot.setDataset(0, newCandlestickData); // Dataset index 0 is for candlesticks
+
+        // 2. Clear old data table model entries (except potentially date/close from new series)
+        this.dataTableModel.clearAllEntries();
+        this.dataTableModel.addEntries(newCandlestickData); // Add new OHLC data
+
+        // 3. Clear existing indicator datasets and renderers from all plots
+        // Reset overlayIds for the main plot
+        this.overlayIds = 2; // Candlestick is 0, Volume (part of candlestick) is effectively 1
+                             // Or 1 if you don't count volume as separate overlayId from candlestick renderer
+
+        // Clear overlays from candlestick plot (from index overlayIds upwards)
+        for (int i = candlestickPlot.getDatasetCount() - 1; i >= overlayIds; i--) {
+            candlestickPlot.setDataset(i, null);
+            candlestickPlot.setRenderer(i, null);
+        }
+         // Clear subplots (if any were created for indicators)
+        List<?> subplots = new ArrayList<>(combinedPlot.getSubplots()); // Copy to avoid ConcurrentModificationException
+        for (int i = subplots.size() - 1; i > 0; i--) { // Start from last, don't remove the main candlestick plot (index 0)
+            combinedPlot.remove((XYPlot) subplots.get(i));
+        }
+
+
+        // 4. Re-add all indicators using the new barSeries
+        for (IndicatorConfiguration.Builder<?> icBuilder : this.indicatorConfigBuilders) {
+            // The builder should have been stored. Now build and add.
+            addIndicatorToPlot(icBuilder.build(), this.barSeries);
+        }
+        
+        // 5. Attempt to restore viewport (approximate)
+        if (domainAxis instanceof DateAxis && oldLowerBound != null && oldUpperBound != null) {
+            DateAxis dateAxis = (DateAxis) domainAxis;
+            // This is a simple restoration. More sophisticated logic might find the
+            // closest bar in the new series to the old center.
+            // For now, just set range. It might auto-adjust if data doesn't fit.
+            if (!this.barSeries.isEmpty()) {
+                long firstBarTime = this.barSeries.getBar(this.barSeries.getBeginIndex()).getEndTime().toEpochSecond() * 1000;
+                long lastBarTime = this.barSeries.getBar(this.barSeries.getEndIndex()).getEndTime().toEpochSecond() * 1000;
+
+                long newLower = Math.max(oldLowerBound.getTime(), firstBarTime);
+                long newUpper = Math.min(oldUpperBound.getTime(), lastBarTime);
+
+                if (newLower < newUpper) {
+                     dateAxis.setRange(new Date(newLower), new Date(newUpper));
+                } else {
+                    // Fallback if old range is outside new series range
+                    dateAxis.setAutoRange(true); // Let it decide
+                }
+            } else {
+                 dateAxis.setAutoRange(true);
+            }
+        }
+
+
+        // Chart title might need update
+        this.chart.setTitle(this.barSeries.getName()); // Update chart title with new series name (often includes timeframe)
+
+        return this.chart;
+    }
+
 
 	private JFreeChart createCandlestickChart(final BarSeries series) {
 		final String seriesName = series.getName();
@@ -96,9 +200,16 @@ public class TacChartBuilder {
 	 * @param indicatorConfigurationBuilder the indicatorConfiguration with the {@link Indicator}ndicator
 	 * @return the {@link TacChartBuilder builder}
 	 */
-	public TacChartBuilder withIndicator(IndicatorConfiguration.Builder<?> indicatorConfigurationBuilder) {
+    public TacChartBuilder withIndicator(IndicatorConfiguration.Builder<?> indicatorConfigurationBuilder) {
+        // Store the builder to be able to rebuild indicators on timeframe change
+        this.indicatorConfigBuilders.add(indicatorConfigurationBuilder);
+        // Don't add to plot immediately here if we are building; do it in build() or switchTimeframe()
+        return this;
+    }
+
+    // Renamed and modified: This method does the actual adding to plot
+    private void addIndicatorToPlot(IndicatorConfiguration<?> indicatorConfiguration, BarSeries currentSeries) {
 		final CombinedDomainXYPlot combinedDomainPlot = (CombinedDomainXYPlot) this.chart.getPlot();
-		final IndicatorConfiguration<?> indicatorConfiguration = indicatorConfigurationBuilder.build();
 		final Indicator<?> indicator = indicatorConfiguration.getIndicator();
 		final PlotType plotType = indicatorConfiguration.getPlotType();
 		final ChartType chartType = indicatorConfiguration.getChartType();
@@ -155,7 +266,6 @@ public class TacChartBuilder {
 				combinedDomainPlot.add(linePlot, 1);
 			}
 		}
-		return this;
 	}
 
 	private void setPlotTheme(XYPlot plot) {
@@ -204,5 +314,14 @@ public class TacChartBuilder {
 	 */
 	public void buildAndShow(){
 		buildAndShow("Ta4j charting");
+	}
+
+	/**
+	 * Returns the multi-timeframe bar series.
+	 *
+	 * @return the multi-timeframe bar series
+	 */
+	public IBarSeriesMultiTf getMultiTfBarSeries() {
+		return multiTfBarSeries;
 	}
 }

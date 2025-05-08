@@ -19,6 +19,13 @@ public class TacDataTableModel extends AbstractTableModel{
 
 	private final Map<String, List<Object>> data = new LinkedHashMap<>();
 
+	public void clearAllEntries() {
+        this.dates.clear();
+        this.closes.clear();
+        this.data.clear();
+        fireTableStructureChanged(); // Notify table that everything might have changed
+    }
+
 	public void addEntries(String columnName, List<Object> values) {
 		this.data.put(columnName, values);
 	}
@@ -40,6 +47,7 @@ public class TacDataTableModel extends AbstractTableModel{
 			this.closes.add(close);
 			this.dates.add(date);
 		}
+        fireTableStructureChanged(); // Or fireTableDataChanged if structure is same
 	}
 
 	public void addEntries(TimeSeriesCollection timeSeriesCollection){

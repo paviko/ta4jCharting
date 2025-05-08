@@ -47,6 +47,7 @@
 		<maven.compiler.source>8</maven.compiler.source>
 		<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
 		<project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+		<trading-data-stream.version>3.0.1-SNAPSHOT</trading-data-stream.version>
 	</properties>
 	<repositories>
 		<repository>
@@ -120,6 +121,12 @@
 				<groupId>org.ta4j</groupId>
 				<artifactId>ta4j-core</artifactId>
 				<version>0.17</version>
+			</dependency>
+			<!-- Trading Data Stream -->
+			<dependency>
+				<groupId>com.limemojito.oss.trading.trading-data-stream</groupId>
+				<artifactId>model</artifactId>
+				<version>${trading-data-stream.version}</version>
 			</dependency>
 			<dependency>
 				<groupId>ch.qos.logback</groupId>
