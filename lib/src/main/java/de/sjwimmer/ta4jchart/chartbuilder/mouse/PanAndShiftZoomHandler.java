@@ -207,17 +207,45 @@ public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelLi
             rangeAxis = ((XYPlot) plot).getRangeAxis();
         }
         
-        if (domainAxis instanceof DateAxis) {
+        // Check if Shift key is down and auto-range is disabled for Y-axis zooming
+        boolean shiftDown = e.isShiftDown();
+        boolean autoRangeDisabled = tacAutoRangeButton != null && !tacAutoRangeButton.isSelected();
+        
+        // Calculate zoom factor - use a smaller factor than TacZoomButtons
+        // Negative rotation = zoom in, positive rotation = zoom out
+        double zoomFactor = e.getWheelRotation() < 0 ? 0.85 : 1.15; // Smaller factor for more precise zooming
+        
+        // If Shift is pressed and auto-range is disabled, zoom Y axis
+        if (shiftDown && autoRangeDisabled && rangeAxis != null) {
+            // Get current Y-axis range
+            double lower = rangeAxis.getRange().getLowerBound();
+            double upper = rangeAxis.getRange().getUpperBound();
+            double length = upper - lower;
+            double newLength = length * zoomFactor;
+            
+            // Calculate the mouse position as a fraction of the data area height
+            double mouseY = e.getY();
+            double areaY = screenDataArea.getY();
+            double areaHeight = screenDataArea.getHeight();
+            double positionFactor = 1.0 - ((mouseY - areaY) / areaHeight); // Invert because Y coordinates increase downward
+            
+            // Calculate new bounds centered around mouse position
+            double pointOnAxis = lower + (length * positionFactor);
+            double newLower = pointOnAxis - (newLength * positionFactor);
+            double newUpper = newLower + newLength;
+            
+            // Set the new range
+            rangeAxis.setRange(newLower, newUpper);
+            e.consume();
+        }
+        // Otherwise zoom X axis (default behavior)
+        else if (domainAxis instanceof DateAxis) {
             DateAxis dateAxis = (DateAxis) domainAxis;
             
-            // Get current axis range
+            // Get current X-axis range
             double lower = dateAxis.getRange().getLowerBound();
             double upper = dateAxis.getRange().getUpperBound();
             double length = upper - lower;
-            
-            // Calculate zoom factor - use a smaller factor than TacZoomButtons
-            // Negative rotation = zoom in, positive rotation = zoom out
-            double zoomFactor = e.getWheelRotation() < 0 ? 0.85 : 1.15; // Smaller factor for more precise zooming
             double newLength = length * zoomFactor;
             
             // Calculate the mouse position as a fraction of the data area width
