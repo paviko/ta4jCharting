@@ -44,7 +44,7 @@ public class TacChartBuilder {
 
 	private int overlayIds = 2; // 0 = ohlcv data, 1 = volume data
 
-	private static final int BARS_PER_100PX = 4;
+	private static final int BARS_PER_100PX = 8;
 
 	public static TacChartBuilder of(BarSeries barSeries) {
 		return of(barSeries, Theme.LIGHT);
@@ -267,7 +267,7 @@ public class TacChartBuilder {
 
 		combinedDomainPlot.add(plot,10);
 		valueAxis.setAutoRangeIncludesZero(false);
-		candlestickRenderer.setAutoWidthMethod(TacCandlestickRenderer.WIDTHMETHOD_AVERAGE);
+		candlestickRenderer.setAutoWidthMethod(TacCandlestickRenderer.WIDTHMETHOD_SMALLEST);
 		candlestickRenderer.setDrawVolume(false);
 		candlestickRenderer.setDefaultItemLabelsVisible(false);
 
