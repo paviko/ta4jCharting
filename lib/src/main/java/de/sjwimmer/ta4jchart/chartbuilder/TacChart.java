@@ -49,6 +49,15 @@ public class TacChart extends JPanel {
                 // This allows it to receive key events.
                 requestFocusInWindow();
             }
+
+            @Override
+            public void setChart(JFreeChart newChartToSet) {
+                super.setChart(newChartToSet);
+                // Enforce our desired default zoomable state after any chart change.
+                // PanAndShiftZoomHandler will manage enabling them temporarily for Shift-zoom.
+                this.setDomainZoomable(false);
+                this.setRangeZoomable(false);
+            }
         };
         chartPanel.setFocusable(true); // Essential for receiving KeyEvents
 
@@ -69,12 +78,6 @@ public class TacChart extends JPanel {
         
         // Add zoom buttons
         new TacZoomButtons(chartPanel, tacAutoRangeButton).addToToolBar(toolBar);
-
-        // Disable default ChartPanel zoom initiated by unqualified left-click drag
-        chartPanel.setDomainZoomable(false);
-        chartPanel.setRangeZoomable(false);
-        // Mouse wheel zoom is typically enabled by default and can be kept:
-        // chartPanel.setMouseWheelEnabled(true); 
 
         // Add custom handler for pan (left-click drag) and shift-zoom (Shift + left-click drag)
         PanAndShiftZoomHandler panAndShiftZoomHandler = new PanAndShiftZoomHandler(chartPanel, tacAutoRangeButton);
