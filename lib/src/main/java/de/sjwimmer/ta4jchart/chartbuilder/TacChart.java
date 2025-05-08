@@ -22,6 +22,8 @@ import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 
 import javax.swing.*;
 import java.awt.*;
+import java.awt.event.ComponentAdapter;
+import java.awt.event.ComponentEvent;
 import java.awt.event.KeyAdapter;
 import java.awt.event.KeyEvent;
 
@@ -34,11 +36,15 @@ public class TacChart extends JPanel {
     private final ChartPanel chartPanel; // Make chartPanel a field to access it in handlePanning
     private final TacChartBuilder chartBuilder;
     private final TacAutoRangeButton tacAutoRangeButton; // Store the button instance
+    private final BarSeries barSeries; // Store the initial/current bar series for addNotify
 
+    private boolean initialDomainRangeApplied = false;
+    
     public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord, TacChartBuilder chartBuilder) {
         super(new BorderLayout());
 
         this.chartBuilder = chartBuilder;
+        this.barSeries = barSeries;
 
         // Create ChartPanel and override addNotify to request focus when it becomes displayable
         this.chartPanel = new ChartPanel(chart) {
@@ -60,6 +66,29 @@ public class TacChart extends JPanel {
             }
         };
         chartPanel.setFocusable(true); // Essential for receiving KeyEvents
+        
+        // Add ComponentListener to ChartPanel to set initial zoom when size is known
+        chartPanel.addComponentListener(new ComponentAdapter() {
+            @Override
+            public void componentResized(ComponentEvent e) {
+                // Ensure this runs only once and when width is valid
+                if (!initialDomainRangeApplied && chartPanel.getWidth() > 0 && chartPanel.getHeight() > 0) {
+                    JFreeChart currentChart = chartPanel.getChart();
+                    // Use the chartBuilder instance associated with this TacChart
+                    if (currentChart != null && TacChart.this.chartBuilder != null) {
+                        TacChart.this.chartBuilder.setInitialChartViewport(currentChart, chartPanel.getWidth());
+                        initialDomainRangeApplied = true;
+                        // After setting X-axis, ensure Y-axes are correctly ranged according to button state
+                        if (tacAutoRangeButton != null) {
+                             TacChartUtils.applyAutoRangeState(currentChart, tacAutoRangeButton.isSelected());
+                        }
+                        // Remove the listener after applying the initial zoom to prevent re-zooming on every resize
+                        chartPanel.removeComponentListener(this);
+                    }
+                }
+            }
+        });
+
 
         final JToolBar toolBar = new JToolBar("Action");
 

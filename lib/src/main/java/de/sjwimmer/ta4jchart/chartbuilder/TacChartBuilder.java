@@ -3,6 +3,7 @@ package de.sjwimmer.ta4jchart.chartbuilder;
 import de.sjwimmer.ta4jchart.chartbuilder.converter.*;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
+import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
@@ -17,6 +18,7 @@ import org.slf4j.LoggerFactory;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.Indicator;
 import org.ta4j.core.TradingRecord;
+import org.ta4j.core.num.Num;
 
 import com.limemojito.trading.model.bar.Bar.Period;
 
@@ -41,6 +43,8 @@ public class TacChartBuilder {
     private final List<IndicatorConfiguration.Builder<?>> indicatorConfigBuilders = new ArrayList<>(); // Store builders
 
 	private int overlayIds = 2; // 0 = ohlcv data, 1 = volume data
+
+	private static final int BARS_PER_100PX = 4;
 
 	public static TacChartBuilder of(BarSeries barSeries) {
 		return of(barSeries, Theme.LIGHT);
@@ -81,8 +85,88 @@ public class TacChartBuilder {
         for (IndicatorConfiguration.Builder<?> builder : indicatorConfigBuilders) {
             addIndicatorToPlot(builder.build(), this.barSeries);
         }
+        // Initial zoom is now handled by TacChart.addNotify() calling setInitialChartViewport
 		return new TacChart(chart, barSeries, dataTableModel, tradingRecord, this);
 	}
+
+    public void setInitialChartViewport(JFreeChart chartToConfigure, int chartPanelWidth) {
+        if (this.barSeries == null || this.barSeries.isEmpty() || chartToConfigure == null) {
+            return;
+        }
+
+        org.jfree.chart.plot.Plot plot = chartToConfigure.getPlot();
+        if (!(plot instanceof CombinedDomainXYPlot)) {
+            return;
+        }
+
+        CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) plot;
+        ValueAxis domainAxis = combinedPlot.getDomainAxis();
+
+        if (!(domainAxis instanceof DateAxis)) {
+            return;
+        }
+        DateAxis dateAxis = (DateAxis) domainAxis;
+
+        // 1. Estimate average bar duration
+        long avgBarDurationMillis = 5 * 60 * 1000; // Default 5 minutes
+        if (this.barSeries instanceof IBarSeriesMultiTf) {
+            Period period = ((IBarSeriesMultiTf) this.barSeries).getPeriod();
+            if (period != null && period.getDuration() != null) {
+                avgBarDurationMillis = period.getDuration().toMillis();
+            }
+        } else if (this.barSeries.getBarCount() > 1) {
+            int lastIdx = this.barSeries.getEndIndex();
+            int prevIdx = Math.max(this.barSeries.getBeginIndex(), lastIdx - 1);
+            if (lastIdx > prevIdx) { // Make sure we have at least two distinct bars
+                avgBarDurationMillis = this.barSeries.getBar(lastIdx).getEndTime().toInstant().toEpochMilli() -
+                                       this.barSeries.getBar(prevIdx).getEndTime().toInstant().toEpochMilli();
+            }
+        }
+        if (avgBarDurationMillis <= 0) { // Sanity check
+            avgBarDurationMillis = 5 * 60 * 1000;
+        }
+
+        // 2. Determine the number of bars to display
+        int barsToDisplay = 100; // Default
+        if (chartPanelWidth > 0) {
+            barsToDisplay = (int) (((double) chartPanelWidth / 100.0) * BARS_PER_100PX);
+            if (barsToDisplay < 10) barsToDisplay = 10; // Minimum of 10 bars
+        }
+        barsToDisplay = Math.min(barsToDisplay, this.barSeries.getBarCount()); // Cannot display more than available
+
+        if (barsToDisplay <= 0) { // Not enough bars or invalid width
+             dateAxis.setAutoRange(true); // Fallback
+             return;
+        }
+        
+        // 3. Calculate date range
+        int endIndex = this.barSeries.getEndIndex();
+        
+        // Upper bound: end time of the last bar + one average bar duration (for padding)
+        long lastBarActualEndTimeMillis = this.barSeries.getBar(endIndex).getEndTime().toInstant().toEpochMilli();
+        long upperBoundTimeMillis = lastBarActualEndTimeMillis + avgBarDurationMillis;
+
+        // Lower bound:
+        // Find the (endIndex - barsToDisplay + 1)-th bar. The range should start before this bar.
+        int firstVisibleBarIndex = Math.max(this.barSeries.getBeginIndex(), endIndex - barsToDisplay + 1);
+        long lowerBoundTimeMillis;
+
+        if (firstVisibleBarIndex > this.barSeries.getBeginIndex()) {
+            // Use the end time of the bar *before* the first visible bar as the lower bound.
+            lowerBoundTimeMillis = this.barSeries.getBar(firstVisibleBarIndex - 1).getEndTime().toInstant().toEpochMilli();
+        } else {
+            // The first visible bar is the first bar in the series.
+            // Start the range one bar duration *before* its end time (approximates its begin time).
+            lowerBoundTimeMillis = this.barSeries.getBar(firstVisibleBarIndex).getEndTime().toInstant().toEpochMilli() - avgBarDurationMillis;
+        }
+        
+        if (lowerBoundTimeMillis < upperBoundTimeMillis) {
+            dateAxis.setRange(new Date(lowerBoundTimeMillis), new Date(upperBoundTimeMillis));
+            dateAxis.setAutoRange(false); // CRUCIAL
+        } else {
+            dateAxis.setAutoRange(true); // Fallback if calculation is off
+        }
+    }
 
     // Method to be called by TacChart for timeframe switching
     public JFreeChart switchTimeframe(Period newTimeframe) {
@@ -141,26 +225,25 @@ public class TacChartBuilder {
         }
         
         // 5. Attempt to restore viewport (approximate)
-        if (domainAxis instanceof DateAxis && oldLowerBound != null && oldUpperBound != null) {
+        if (domainAxis instanceof DateAxis) {
             DateAxis dateAxis = (DateAxis) domainAxis;
-            // This is a simple restoration. More sophisticated logic might find the
-            // closest bar in the new series to the old center.
-            // For now, just set range. It might auto-adjust if data doesn't fit.
-            if (!this.barSeries.isEmpty()) {
+            boolean restored = false;
+            if (oldLowerBound != null && oldUpperBound != null && !this.barSeries.isEmpty()) {
                 long firstBarTime = this.barSeries.getBar(this.barSeries.getBeginIndex()).getEndTime().toEpochSecond() * 1000;
                 long lastBarTime = this.barSeries.getBar(this.barSeries.getEndIndex()).getEndTime().toEpochSecond() * 1000;
-
                 long newLower = Math.max(oldLowerBound.getTime(), firstBarTime);
                 long newUpper = Math.min(oldUpperBound.getTime(), lastBarTime);
-
-                if (newLower < newUpper) {
+                
+                if (newLower < newUpper && (newUpper - newLower > 1000 * 60) ) { // Check for valid and somewhat reasonable range
                      dateAxis.setRange(new Date(newLower), new Date(newUpper));
-                } else {
-                    // Fallback if old range is outside new series range
-                    dateAxis.setAutoRange(true); // Let it decide
+                     dateAxis.setAutoRange(false);
+                     restored = true;
                 }
-            } else {
-                 dateAxis.setAutoRange(true);
+            }
+            if (!restored) {
+                // Fallback: Apply a default view for the new timeframe (e.g., last N bars)
+                // Use a default panel width or a fixed number of bars for this fallback
+                setInitialChartViewport(this.chart, -1); // -1 indicates to use default bars
             }
         }
 
@@ -184,7 +267,7 @@ public class TacChartBuilder {
 
 		combinedDomainPlot.add(plot,10);
 		valueAxis.setAutoRangeIncludesZero(false);
-		candlestickRenderer.setAutoWidthMethod(1);
+		candlestickRenderer.setAutoWidthMethod(TacCandlestickRenderer.WIDTHMETHOD_AVERAGE);
 		candlestickRenderer.setDrawVolume(false);
 		candlestickRenderer.setDefaultItemLabelsVisible(false);
 
