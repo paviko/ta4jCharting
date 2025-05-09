@@ -33,9 +33,9 @@ public class TacTradingRecordTradeTableModel extends AbstractTableModel {
         columnFunctions.put(1, t -> String.format("%s", t.getIndex()));
         columnFunctions.put(2, t -> String.format("%.2f", t.getAmount().doubleValue()));
         columnFunctions.put(3, t -> String.format("%.2f", t.getCost().doubleValue()));
-        columnFunctions.put(4, t -> String.format("%.2f", t.getNetPrice().doubleValue()));
+        columnFunctions.put(4, t -> String.format("%.4f", t.getNetPrice().doubleValue()));
         columnFunctions.put(5, t -> String.format("%.2f", t.getValue().doubleValue()));
-        columnFunctions.put(6, t -> String.format("%.2f", t.getPricePerAsset().doubleValue()));
+        columnFunctions.put(6, t -> String.format("%.4f", t.getPricePerAsset().doubleValue()));
     }
 
     public TacTradingRecordTradeTableModel(Position position) {
