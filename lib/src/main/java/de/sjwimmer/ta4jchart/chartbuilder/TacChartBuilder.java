@@ -175,6 +175,10 @@ public class TacChartBuilder {
             return this.chart;
         }
 
+		if (this.tradingRecord instanceof ITradingRecordMultiTf) {
+			((ITradingRecordMultiTf) this.tradingRecord).setTargetPeriod(newTimeframe);
+		}
+		
         Date oldLowerBound = null;
         Date oldUpperBound = null;
         CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) this.chart.getPlot();
