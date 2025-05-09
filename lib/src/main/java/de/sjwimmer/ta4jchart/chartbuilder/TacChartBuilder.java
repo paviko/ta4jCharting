@@ -3,7 +3,6 @@ package de.sjwimmer.ta4jchart.chartbuilder;
 import de.sjwimmer.ta4jchart.chartbuilder.converter.*;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
-import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
@@ -410,5 +409,13 @@ public class TacChartBuilder {
 	 */
 	public IBarSeriesMultiTf getMultiTfBarSeries() {
 		return multiTfBarSeries;
+	}
+
+	/**
+	 * Returns the BarSeries for the current timeframe.
+	 * @return The current BarSeries.
+	 */
+	public BarSeries getCurrentBarSeries() {
+		return this.barSeries;
 	}
 }

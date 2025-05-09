@@ -100,7 +100,7 @@ public class TacChart extends JPanel {
         toolBar.add(tacAutoRangeButton);
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
         toolBar.add(new TacShowTradingRecordButton(tradingRecord, this));
-        toolBar.add(new TacShowBuySellSignals(chart, barSeries, tradingRecord, this));
+        toolBar.add(new TacShowBuySellSignals(chart, tradingRecord, this, this.chartBuilder));
         
         // Add timeframe buttons if multi-timeframe series is available
         new TacTimeframeButtons(chartBuilder, chartPanel, this).addToToolBar(toolBar);

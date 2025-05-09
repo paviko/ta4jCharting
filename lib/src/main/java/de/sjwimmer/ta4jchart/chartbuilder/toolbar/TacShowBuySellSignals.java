@@ -1,17 +1,20 @@
 package de.sjwimmer.ta4jchart.chartbuilder.toolbar;
 
 import de.sjwimmer.ta4jchart.chartbuilder.TacChart;
+import de.sjwimmer.ta4jchart.chartbuilder.TacChartBuilder;
 import org.jfree.chart.JFreeChart;
-import org.jfree.chart.plot.*;
-import org.jfree.chart.ui.Layer;
-import org.jfree.chart.ui.RectangleAnchor;
+import org.jfree.chart.annotations.XYAnnotation;
+import org.jfree.chart.annotations.XYLineAnnotation;
+import org.jfree.chart.annotations.XYTextAnnotation;
+import org.jfree.chart.plot.CombinedDomainXYPlot;
+import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.ui.TextAnchor;
-import org.jfree.data.time.Minute;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ta4j.core.Bar;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.Position;
+import org.ta4j.core.Trade;
 import org.ta4j.core.TradingRecord;
 
 import javax.swing.*;
@@ -19,8 +22,7 @@ import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.util.ArrayList;
-import java.util.Collection;
-import java.util.Date;
+import java.util.List;
 
 public class TacShowBuySellSignals extends JToggleButton implements ActionListener {
 
@@ -28,125 +30,189 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
 
     private final TacChart mainPanel;
     private final JFreeChart chart;
-    private final BarSeries barSeries;
     private final TradingRecord tradingRecord;
+    private final TacChartBuilder chartBuilder;
 
-    final static Color MARKER_COLOR = Color.black;
-    final static Font LABEL_FONT = new Font("Arial", Font.BOLD, 12);
+    private static final Font LABEL_FONT = new Font("Arial", Font.BOLD, 10); // Kept for profit text
+    private static final Font ARROW_FONT = new Font("SansSerif", Font.PLAIN, 12); // Font for arrow characters
+    private static final String UP_ARROW = "▲";
+    private static final String DOWN_ARROW = "▼";
 
-    public TacShowBuySellSignals(JFreeChart chart, BarSeries barSeries, TradingRecord tradingRecord, TacChart mainPanel) {
+    private final List<XYAnnotation> currentAnnotations = new ArrayList<>();
+
+    public TacShowBuySellSignals(JFreeChart chart, TradingRecord tradingRecord, TacChart mainPanel, TacChartBuilder chartBuilder) {
         super("Entry/exit Signals");
         setToolTipText("Shows/hides entry and exit signals on the chart");
         addActionListener(this);
         this.mainPanel = mainPanel;
         this.chart = chart;
-        this.barSeries = barSeries;
         this.tradingRecord = tradingRecord;
-        if (tradingRecord == null) {
-            this.setEnabled(false);
-        } else {
-            addBuySellSignals(tradingRecord, barSeries, chart);
-            setSelected(true);
-        }
+        this.chartBuilder = chartBuilder;
 
+        if (this.tradingRecord != null) {
+            BarSeries initialBarSeries = this.chartBuilder.getCurrentBarSeries();
+            if (initialBarSeries != null && !initialBarSeries.isEmpty()) {
+                addBuySellSignals(this.tradingRecord, initialBarSeries, this.chart);
+                setSelected(true);
+            } else {
+                log.warn("Initial BarSeries is null or empty. Buy/sell signals not drawn at startup.");
+                setSelected(false);
+            }
+        } else {
+            this.setEnabled(false);
+        }
     }
 
     @Override
     public void actionPerformed(ActionEvent e) {
-        if(isSelected()) {
-            addBuySellSignals(tradingRecord, barSeries, chart);
+        BarSeries currentBarSeries = chartBuilder.getCurrentBarSeries();
+        if (currentBarSeries == null || currentBarSeries.isEmpty()) {
+            log.warn("Current BarSeries is null or empty. Cannot {} buy/sell signals.", isSelected() ? "show" : "hide effectively");
+            if (isSelected()) { // User tried to show signals
+                removeBuySellSignals(getMainPlot(chart)); // Clear any old ones
+                setSelected(false); // Force toggle off as we can't show them
+            } else { // User tried to hide signals
+                 removeBuySellSignals(getMainPlot(chart)); // Proceed with removal
+            }
+            mainPanel.revalidate();
+            mainPanel.repaint();
+            return;
+        }
+
+        if (isSelected()) {
+            addBuySellSignals(tradingRecord, currentBarSeries, chart);
         } else {
-            removeBuySellSignals(((XYPlot)((CombinedDomainXYPlot) chart.getPlot()).getSubplots().get(0)));
+            removeBuySellSignals(getMainPlot(chart));
         }
         mainPanel.revalidate();
         mainPanel.repaint();
     }
 
-    public void addBuySellSignals(TradingRecord tradingRecord, BarSeries barSeries, JFreeChart chart) {
-        if(tradingRecord.getLastExit() != null) {
-            final XYPlot mainPlot = ((XYPlot)((CombinedDomainXYPlot) chart.getPlot()).getSubplots().get(0));
-            removeBuySellSignals(mainPlot);
-            for(Position trade: tradingRecord.getPositions()){
-                final int entryIndex = trade.getEntry().getIndex();
-                final int exitIndex = trade.getExit().getIndex();
-                final Bar entryBar = barSeries.getBar(entryIndex);
-                final Bar exitBar = barSeries.getBar(exitIndex);
-                final double profit = trade.getProfit().doubleValue();
-                final Color profitColor = profit > 0 ? Color.GREEN: Color.RED;
-                final double entry = new Minute(Date.from(entryBar
-                        .getEndTime().toInstant())).getFirstMillisecond();
-                final double exit = new Minute(Date.from(
-                        exitBar.getEndTime().toInstant())).getFirstMillisecond();
-
-                mainPlot.addDomainMarker(createInValueMarker(entry));
-                mainPlot.addDomainMarker(createOutValueMarker(exit, profitColor));
-                mainPlot.addDomainMarker(createIntervalTextMarker(entry, exit, profitColor, profit));
-                mainPlot.addDomainMarker(createIntervalMarker(entry, exit, profitColor), Layer.BACKGROUND);
+    private XYPlot getMainPlot(JFreeChart chartInstance) {
+        if (chartInstance == null || chartInstance.getPlot() == null) return null;
+        if (chartInstance.getPlot() instanceof CombinedDomainXYPlot) {
+            CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) chartInstance.getPlot();
+            if (combinedPlot.getSubplots() != null && !combinedPlot.getSubplots().isEmpty()) {
+                return (XYPlot) combinedPlot.getSubplots().get(0);
             }
-        } else{
-            log.error("No closed trade in trading record!");
+        } else if (chartInstance.getPlot() instanceof XYPlot) {
+            return (XYPlot) chartInstance.getPlot();
+        }
+        return null;
+    }
+
+    public void addBuySellSignals(TradingRecord record, BarSeries series, JFreeChart chartInstance) {
+        final XYPlot mainPlot = getMainPlot(chartInstance);
+        if (mainPlot == null) {
+            log.error("Could not get main plot to draw signals.");
+            return;
         }
 
+        removeBuySellSignals(mainPlot); // Clear previous annotations
+
+        if (record == null || series == null || series.isEmpty() || record.getPositions().isEmpty()) {
+            return; // Nothing to draw
+        }
+
+        for (Position position : record.getPositions()) {
+            if (position.getEntry() == null || position.getExit() == null) {
+                log.trace("Skipping open or incomplete position: {}", position);
+                continue;
+            }
+
+            final Trade entryTrade = position.getEntry();
+            final Trade exitTrade = position.getExit();
+            final int entryIndex = entryTrade.getIndex();
+            final int exitIndex = exitTrade.getIndex();
+
+            if (entryIndex < series.getBeginIndex() || entryIndex > series.getEndIndex() ||
+                exitIndex < series.getBeginIndex() || exitIndex > series.getEndIndex()) {
+                log.warn("Trade indices [{}(entry), {}(exit)] out of current BarSeries bounds [{}, {}]. Skipping position for display.",
+                        entryIndex, exitIndex, series.getBeginIndex(), series.getEndIndex());
+                continue;
+            }
+
+            final Bar entryBar = series.getBar(entryIndex);
+            final Bar exitBar = series.getBar(exitIndex);
+
+            final double entryMillis = entryBar.getEndTime().toInstant().toEpochMilli();
+            final double entryPrice = entryTrade.getNetPrice().doubleValue();
+            final double exitMillis = exitBar.getEndTime().toInstant().toEpochMilli();
+            final double exitPrice = exitTrade.getNetPrice().doubleValue();
+
+            Color positionColor;
+            XYTextAnnotation entryArrowAnnotation;
+            XYTextAnnotation exitArrowAnnotation;
+
+            if (entryTrade.getType() == Trade.TradeType.BUY) { // BUY position
+                positionColor = Color.GREEN;
+                entryArrowAnnotation = new XYTextAnnotation(UP_ARROW, entryMillis, entryPrice);
+                entryArrowAnnotation.setTextAnchor(TextAnchor.TOP_CENTER); // Tip of "▲" at price, body below
+                exitArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, exitMillis, exitPrice);
+                exitArrowAnnotation.setTextAnchor(TextAnchor.BOTTOM_CENTER); // Tip of "▼" at price, body above
+            } else { // SELL position
+                positionColor = Color.RED;
+                entryArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, entryMillis, entryPrice);
+                entryArrowAnnotation.setTextAnchor(TextAnchor.BOTTOM_CENTER); // Tip of "▼" at price, body above
+                exitArrowAnnotation = new XYTextAnnotation(UP_ARROW, exitMillis, exitPrice);
+                exitArrowAnnotation.setTextAnchor(TextAnchor.TOP_CENTER); // Tip of "▲" at price, body below
+            }
+
+            entryArrowAnnotation.setFont(ARROW_FONT);
+            entryArrowAnnotation.setPaint(positionColor);
+            mainPlot.addAnnotation(entryArrowAnnotation);
+            currentAnnotations.add(entryArrowAnnotation);
+
+            exitArrowAnnotation.setFont(ARROW_FONT);
+            exitArrowAnnotation.setPaint(positionColor);
+            mainPlot.addAnnotation(exitArrowAnnotation);
+            currentAnnotations.add(exitArrowAnnotation);
+
+            BasicStroke dottedStroke = new BasicStroke(
+                    1.0f,                      // width
+                    BasicStroke.CAP_BUTT,      // cap
+                    BasicStroke.JOIN_MITER,    // join
+                    10.0f,                     // miter limit
+                    new float[] {3.0f, 3.0f},  // dash array (3px line, 3px space)
+                    0.0f                       // dash phase
+            );
+
+            XYLineAnnotation connectingLine = new XYLineAnnotation(
+                    entryMillis, entryPrice, exitMillis, exitPrice,
+                    dottedStroke, positionColor
+            );
+            mainPlot.addAnnotation(connectingLine);
+            currentAnnotations.add(connectingLine);
+
+            final double profit = position.getProfit().doubleValue();
+            final Color profitTextPaint = profit >= 0 ? new Color(0, 128, 0) : Color.RED; // Dark green or red
+
+            double textX = (entryMillis + exitMillis) / 2;
+            double textY = (entryPrice + exitPrice) / 2;
+
+            XYTextAnnotation profitTextAnnotation = new XYTextAnnotation(String.format("%.2f", profit), textX, textY);
+            profitTextAnnotation.setFont(LABEL_FONT);
+            profitTextAnnotation.setPaint(profitTextPaint);
+            profitTextAnnotation.setTextAnchor(TextAnchor.CENTER_LEFT); // Position text slightly to the right of midpoint
+            // Optional: background for profit text for readability
+            // profitTextAnnotation.setBackgroundPaint(new Color(220, 220, 220, 180)); 
+            // profitTextAnnotation.setOutlineVisible(true);
+            // profitTextAnnotation.setOutlinePaint(Color.LIGHT_GRAY);
+
+
+            mainPlot.addAnnotation(profitTextAnnotation);
+            currentAnnotations.add(profitTextAnnotation);
+        }
     }
 
     public void removeBuySellSignals(XYPlot plot) {
-        removeDomainMarkers(plot);
-    }
+        if (plot == null) return;
+        // Create a copy to avoid ConcurrentModificationException if underlying list is modified by events
+        List<XYAnnotation> toRemove = new ArrayList<>(currentAnnotations);
+        currentAnnotations.clear(); 
 
-    private void removeDomainMarkers(XYPlot plot) {
-        Collection<?> domainMarkers = plot.getDomainMarkers(Layer.FOREGROUND);
-        Collection<?> domainMarkers2 = plot.getDomainMarkers(Layer.BACKGROUND);
-        removeMarkers(plot, domainMarkers, Layer.FOREGROUND);
-        removeMarkers(plot, domainMarkers2, Layer.BACKGROUND);
-    }
-
-
-    private void removeMarkers(XYPlot plot, Collection<?> markers, Layer layer) {
-        if(markers != null){
-            for (Object markerObject : new ArrayList<>(markers)) {
-                if (markerObject instanceof Marker) {
-                    plot.removeDomainMarker((Marker) markerObject, layer);
-                }
-            }
+        for (XYAnnotation annotation : toRemove) {
+            plot.removeAnnotation(annotation); // Notifies chart listeners by default
         }
-    }
-
-    private Marker createInValueMarker(double value) {
-        ValueMarker in = new ValueMarker(value);
-        in.setLabel("");
-        in.setLabelFont(LABEL_FONT);
-        in.setLabelPaint(Color.BLACK);
-        in.setLabelAnchor(RectangleAnchor.TOP_LEFT);
-        in.setLabelTextAnchor(TextAnchor.TOP_RIGHT);
-        in.setPaint(MARKER_COLOR);
-        return in;
-    }
-
-    private Marker createOutValueMarker(double value, Color color) {
-        ValueMarker out = new ValueMarker(value);
-        out.setLabel("");
-        out.setLabelFont(LABEL_FONT);
-        out.setLabelPaint(MARKER_COLOR);
-        out.setLabelAnchor(RectangleAnchor.TOP_LEFT);
-        out.setLabelTextAnchor(TextAnchor.TOP_RIGHT);
-        out.setPaint(color);
-        return out;
-    }
-
-    private Marker createIntervalTextMarker(double entry, double exit, Color profitColor, double profit) {
-        IntervalMarker imarkerText = new IntervalMarker(entry, exit, new Color(0,0,0,0));
-        imarkerText.setLabelFont(LABEL_FONT);
-        imarkerText.setLabel(String.valueOf(profit));
-        imarkerText.setLabelPaint(MARKER_COLOR);
-        imarkerText.setLabelBackgroundColor(new Color(profitColor.getRed(), profitColor.getGreen(), profitColor.getBlue(), 200));
-        imarkerText.setLabelAnchor(RectangleAnchor.BOTTOM);
-        imarkerText.setLabelTextAnchor(TextAnchor.BOTTOM_CENTER);
-        return imarkerText;
-    }
-
-    private Marker createIntervalMarker(double start, double end, Color color) {
-        IntervalMarker imarker = new IntervalMarker(start, end, color);
-        imarker.setAlpha(0.2f);
-        return imarker;
     }
 }
