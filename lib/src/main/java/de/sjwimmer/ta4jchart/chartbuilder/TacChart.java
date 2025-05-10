@@ -37,6 +37,7 @@ public class TacChart extends JPanel {
     private final TacChartBuilder chartBuilder;
     private final TacAutoRangeButton tacAutoRangeButton; // Store the button instance
     private final BarSeries barSeries; // Store the initial/current bar series for addNotify
+    private final TacShowBuySellSignals tacShowBuySellSignals; // Store the signals button instance
 
     private boolean initialDomainRangeApplied = false;
     
@@ -100,7 +101,8 @@ public class TacChart extends JPanel {
         toolBar.add(tacAutoRangeButton);
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
         toolBar.add(new TacShowTradingRecordButton(tradingRecord, this));
-        toolBar.add(new TacShowBuySellSignals(chart, tradingRecord, this, this.chartBuilder));
+        this.tacShowBuySellSignals = new TacShowBuySellSignals(chart, tradingRecord, this, this.chartBuilder);
+        toolBar.add(this.tacShowBuySellSignals);
         
         // Add timeframe buttons if multi-timeframe series is available
         new TacTimeframeButtons(chartBuilder, chartPanel, this).addToToolBar(toolBar);
@@ -169,5 +171,17 @@ public class TacChart extends JPanel {
                 }
             }
         });
+    }
+    
+    /**
+     * Called by TacTimeframeButtons to refresh UI elements that depend on chart data,
+     * like buy/sell signals, after a timeframe switch.
+     */
+    public void onTimeframeSwitched() {
+        if (this.tacShowBuySellSignals != null) {
+            this.tacShowBuySellSignals.refreshSignals();
+            this.revalidate();
+            this.repaint();
+        }
     }
 }

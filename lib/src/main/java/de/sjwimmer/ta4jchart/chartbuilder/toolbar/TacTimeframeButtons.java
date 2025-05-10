@@ -53,8 +53,12 @@ public class TacTimeframeButtons {
                 if (button.isSelected()) {
                     JFreeChart newChart = chartBuilder.switchTimeframe(tf);
                     chartPanel.setChart(newChart); // Update chartPanel with the (potentially modified) chart
-                    // Toolbar buttons that depend on JFreeChart might need refreshing if JFreeChart instance changes
-                    // For now, switchTimeframe modifies the existing chart instance.
+                    
+                    // Notify TacChart about the timeframe switch to refresh dependent components
+                    if (parent instanceof de.sjwimmer.ta4jchart.chartbuilder.TacChart) {
+                        ((de.sjwimmer.ta4jchart.chartbuilder.TacChart) parent).onTimeframeSwitched();
+                    }
+                    
                     parent.revalidate();
                     parent.repaint();
                 }

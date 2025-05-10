@@ -87,6 +87,26 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
         mainPanel.revalidate();
         mainPanel.repaint();
     }
+    
+    /**
+     * Refreshes the buy/sell signals on the chart.
+     * Call this method when the underlying data (like timeframe) changes.
+     */
+    public void refreshSignals() {
+        BarSeries currentBarSeries = chartBuilder.getCurrentBarSeries();
+        XYPlot plot = getMainPlot(chart); // Get plot once
+
+        removeBuySellSignals(plot); // Always remove old annotations
+
+        if (isSelected()) { // Only add new signals if the button is supposed to be showing them
+            if (currentBarSeries != null && !currentBarSeries.isEmpty()) {
+                addBuySellSignals(tradingRecord, currentBarSeries, chart);
+            } else {
+                log.warn("BarSeries for signals is null or empty during refresh. Signals not drawn.");
+            }
+        }
+        // The parent component (TacChart) should handle revalidate/repaint after calling this.
+    }
 
     private XYPlot getMainPlot(JFreeChart chartInstance) {
         if (chartInstance == null || chartInstance.getPlot() == null) return null;
