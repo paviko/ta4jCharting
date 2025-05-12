@@ -21,4 +21,36 @@ public interface IBarSeriesMultiTf {
      * @return the period
      */
     Period getPeriod();
+
+    /**
+     * Returns the parent period of this bar series.
+     *
+     * @return the parent period
+     */
+    Period getParentPeriod();
+    
+    /**
+     * Returns the parent bar series of this bar series.
+     *
+     * @return the parent bar series
+     */
+    IBarSeriesMultiTf getParent();
+
+    /**
+     * Returns the parent to index mapping for the given index.
+     * Maps parent index -> first child index within parent's time range
+     * 
+     * @param index the index to get the parent to index mapping for
+     * @return the parent to index mapping
+     */
+    int getParentToIndex(int index);
+
+    /**
+     * Returns the index to parent mapping for the given index.
+     * Maps child index -> parent index containing child's time range
+     * 
+     * @param index the index to get the index to parent mapping for
+     * @return the index to parent mapping
+     */
+    int getIndexToParent(int index);
 }

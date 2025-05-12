@@ -38,6 +38,7 @@ public class TacChart extends JPanel {
     private final TacAutoRangeButton tacAutoRangeButton; // Store the button instance
     private final BarSeries barSeries; // Store the initial/current bar series for addNotify
     private final TacShowBuySellSignals tacShowBuySellSignals; // Store the signals button instance
+    private TacChartMouseHandler mouseHandler; // Store the mouse handler instance
 
     private boolean initialDomainRangeApplied = false;
     
@@ -96,7 +97,8 @@ public class TacChart extends JPanel {
         add(toolBar, BorderLayout.NORTH);
         add(new JScrollPane(chartPanel), BorderLayout.CENTER);
 
-        toolBar.add(new TacStickyCrossHairButton(new TacChartMouseHandler(chartPanel)));
+        mouseHandler = new TacChartMouseHandler(chartPanel);
+        toolBar.add(new TacStickyCrossHairButton(mouseHandler));
         tacAutoRangeButton = new TacAutoRangeButton(chart);
         toolBar.add(tacAutoRangeButton);
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
@@ -182,6 +184,9 @@ public class TacChart extends JPanel {
             this.tacShowBuySellSignals.refreshSignals();
             this.revalidate();
             this.repaint();
+        }
+        if (this.mouseHandler != null) {
+            this.mouseHandler.updateDataset();
         }
     }
 }

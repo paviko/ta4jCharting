@@ -117,14 +117,14 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay {
     public void paintOverlay(Graphics2D g2, ChartPanel chartPanel) {
         if(!Double.isNaN(x) && !Double.isNaN(y)) {
             g2.drawString("Date: " + createDateString(xx), (int)x+10, (int)y+60);
-            g2.drawString("Value: " + yy, (int)x+10, (int)y+80);
+            g2.drawString("Value: " + String.format("%.5f", yy), (int)x+10, (int)y+80);
         }
     }
 
     private String createDateString(double xx) {
         Date date = Date.from(Instant.ofEpochMilli((long) findClosestXValue(xx)));
         try {
-            return GlobalConstants.DATE_FORMATTER.valueToString(date);
+            return GlobalConstants.DATE_WITH_TIME_FORMATTER.valueToString(date);
         } catch (ParseException e) {
             log.error("", e);
         }
@@ -143,5 +143,18 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay {
 
     public void setSticky(boolean sticky) {
         this.sticky = sticky;
+    }
+
+    public void updateDataset() {
+        XYPlot mainPlot = (XYPlot)this.combinedDomainXYPlot.getSubplots().get(0);
+        final XYDataset dataset = mainPlot.getDataset(0);
+
+        if (dataset != null) {
+            final int entriesCount = dataset.getItemCount(0);
+            ohlcXValues = new long[entriesCount];
+            for (int i = 0; i < entriesCount; i++) {
+                ohlcXValues[i] = (long) dataset.getX(0, i);
+            }
+        }
     }
 }
