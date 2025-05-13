@@ -16,6 +16,7 @@ import org.ta4j.core.BarSeries;
 import org.ta4j.core.Position;
 import org.ta4j.core.Trade;
 import org.ta4j.core.TradingRecord;
+import de.sjwimmer.ta4jchart.chartbuilder.IChartBuilderAdapter;
 
 import javax.swing.*;
 import java.awt.*;
@@ -31,7 +32,7 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
     private final TacChart mainPanel;
     private final JFreeChart chart;
     private final TradingRecord tradingRecord;
-    private final TacChartBuilder chartBuilder;
+    private final IChartBuilderAdapter chartBuilder;
 
     private static final Font LABEL_FONT = new Font("Arial", Font.BOLD, 10); // Kept for profit text
     private static final Font ARROW_FONT = new Font("SansSerif", Font.PLAIN, 12); // Font for arrow characters
@@ -40,7 +41,7 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
 
     private final List<XYAnnotation> currentAnnotations = new ArrayList<>();
 
-    public TacShowBuySellSignals(JFreeChart chart, TradingRecord tradingRecord, TacChart mainPanel, TacChartBuilder chartBuilder) {
+    public TacShowBuySellSignals(JFreeChart chart, TradingRecord tradingRecord, TacChart mainPanel, IChartBuilderAdapter chartBuilder) {
         super("Entry/exit Signals");
         setToolTipText("Shows/hides entry and exit signals on the chart");
         addActionListener(this);

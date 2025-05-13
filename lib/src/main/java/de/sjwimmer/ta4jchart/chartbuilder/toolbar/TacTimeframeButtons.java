@@ -5,6 +5,7 @@ import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
 import org.ta4j.core.BarSeries;
 import com.limemojito.trading.model.bar.Bar.Period;
+import de.sjwimmer.ta4jchart.chartbuilder.IChartBuilderAdapter;
 
 import javax.swing.*;
 import java.awt.*;
@@ -13,7 +14,7 @@ import java.awt.*;
  * A component that adds timeframe switching buttons to a toolbar
  */
 public class TacTimeframeButtons {
-    private final TacChartBuilder chartBuilder;
+    private final IChartBuilderAdapter chartBuilder;
     private final ChartPanel chartPanel;
     private final Component parent;
 
@@ -24,7 +25,7 @@ public class TacTimeframeButtons {
      * @param chartPanel the chart panel to update when timeframe changes
      * @param parent the parent component to revalidate and repaint
      */
-    public TacTimeframeButtons(TacChartBuilder chartBuilder, ChartPanel chartPanel, Component parent) {
+    public TacTimeframeButtons(IChartBuilderAdapter chartBuilder, ChartPanel chartPanel, Component parent) {
         this.chartBuilder = chartBuilder;
         this.chartPanel = chartPanel;
         this.parent = parent;

@@ -27,7 +27,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Date;
 
-public class TacChartBuilder {
+public class TacChartBuilder implements IChartBuilderAdapter{
 
 	private final TacChartTheme theme;
 	private BarSeries barSeries; // This will now be the BarSeries for the *current* timeframe

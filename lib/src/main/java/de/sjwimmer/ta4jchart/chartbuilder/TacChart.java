@@ -34,7 +34,7 @@ public class TacChart extends JPanel {
     private static final double KEYBOARD_PAN_PERCENTAGE = 0.1; // Scroll by 10% of the visible range
     private static final double KEYBOARD_PAGE_PAN_PERCENTAGE = 0.9; // Scroll by 90% of the visible range
     private final ChartPanel chartPanel; // Make chartPanel a field to access it in handlePanning
-    private final TacChartBuilder chartBuilder;
+    private final IChartBuilderAdapter chartBuilder;
     private final TacAutoRangeButton tacAutoRangeButton; // Store the button instance
     private final BarSeries barSeries; // Store the initial/current bar series for addNotify
     private final TacShowBuySellSignals tacShowBuySellSignals; // Store the signals button instance
@@ -42,7 +42,7 @@ public class TacChart extends JPanel {
 
     private boolean initialDomainRangeApplied = false;
     
-    public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord, TacChartBuilder chartBuilder) {
+    public TacChart(JFreeChart chart, BarSeries barSeries, TacDataTableModel tacDataTableModel, TradingRecord tradingRecord, IChartBuilderAdapter chartBuilder) {
         super(new BorderLayout());
 
         this.chartBuilder = chartBuilder;
