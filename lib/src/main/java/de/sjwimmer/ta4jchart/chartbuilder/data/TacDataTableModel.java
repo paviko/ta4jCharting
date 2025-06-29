@@ -61,34 +61,58 @@ public class TacDataTableModel extends AbstractTableModel{
 	
 	@Override
 	public int getRowCount() {
+		// If we have date/close data, use that for row count
+		if (!dates.isEmpty() && !closes.isEmpty()) {
+			return dates.size();
+		}
+		// Otherwise use custom data
 		Optional<List<Object>> entry = data.values().stream().findAny();
 		return entry.map(List::size).orElse(0);
 	}
 
 	@Override
     public String getColumnName(int col) {
-		if(col == 0){
-			return "Date";
-		} else if(col == 1) {
-			return "Close";
+		// If we have date/close data, use the fixed column layout
+		if (!dates.isEmpty() && !closes.isEmpty()) {
+			if(col == 0){
+				return "Date";
+			} else if(col == 1) {
+				return "Close";
+			}
+			return data.keySet().toArray()[col - 2].toString();
+		} else {
+			// If we only have custom data, use the custom column names directly
+			return data.keySet().toArray()[col].toString();
 		}
-        return data.keySet().toArray()[col - 2].toString();
     }
     
 	@Override
 	public int getColumnCount() {
-		return data.keySet().size() + 2;
+		// If we have date/close data, add 2 for the Date and Close columns
+		if (!dates.isEmpty() && !closes.isEmpty()) {
+			return data.keySet().size() + 2;
+		} else {
+			// If we only have custom data, return just the custom column count
+			return data.keySet().size();
+		}
 	}
 	
 	@Override
 	public Object getValueAt(int rowIndex, int columnIndex) {
-		if(columnIndex == 0){
-			return dates.get(rowIndex);
-		} else if(columnIndex == 1) {
-			return closes.get(rowIndex);
+		// If we have date/close data, use the fixed column layout
+		if (!dates.isEmpty() && !closes.isEmpty()) {
+			if(columnIndex == 0){
+				return dates.get(rowIndex);
+			} else if(columnIndex == 1) {
+				return closes.get(rowIndex);
+			}
+			final String columnName = getColumnName(columnIndex);
+			return data.get(columnName).get(rowIndex);
+		} else {
+			// If we only have custom data, get values directly from custom data
+			final String columnName = getColumnName(columnIndex);
+			return data.get(columnName).get(rowIndex);
 		}
-		final String columnName = getColumnName(columnIndex);
-		return data.get(columnName).get(rowIndex);
 	}
 
 }
