@@ -1,5 +1,6 @@
 package de.sjwimmer.ta4jchart.chartbuilder;
 
+import com.limemojito.trading.model.bar.Bar.Period;
 import de.sjwimmer.ta4jchart.chartbuilder.converter.*;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
@@ -17,17 +18,15 @@ import org.slf4j.LoggerFactory;
 import org.ta4j.core.BarSeries;
 import org.ta4j.core.Indicator;
 import org.ta4j.core.TradingRecord;
-import org.ta4j.core.num.Num;
-
-import com.limemojito.trading.model.bar.Bar.Period;
 
 import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
-import java.util.List;
 import java.util.Date;
+import java.util.List;
 
 public class TacChartBuilder implements IChartBuilderAdapter{
+	private static final Logger log = LoggerFactory.getLogger(TacChartBuilder.class);
 
 	private final TacChartTheme theme;
 	private BarSeries barSeries; // This will now be the BarSeries for the *current* timeframe
@@ -170,7 +169,7 @@ public class TacChartBuilder implements IChartBuilderAdapter{
     // Method to be called by TacChart for timeframe switching
     public JFreeChart switchTimeframe(Period newTimeframe) {
         if (this.multiTfBarSeries == null) {
-            System.err.println("Cannot switch timeframe: IBarSeriesMultiTf not provided.");
+            log.error("Cannot switch timeframe: IBarSeriesMultiTf not provided.");
             return this.chart;
         }
 
@@ -190,7 +189,7 @@ public class TacChartBuilder implements IChartBuilderAdapter{
 
         this.barSeries = this.multiTfBarSeries.at(newTimeframe);
         if (this.barSeries == null || this.barSeries.isEmpty()) {
-            System.err.println("Failed to get BarSeries for timeframe: " + newTimeframe.name() + " or series is empty.");
+            log.error("Failed to get BarSeries for timeframe: {} or series is empty.", newTimeframe.name());
             // Optionally, revert to a default or show an error message on chart
             return this.chart;
         }
