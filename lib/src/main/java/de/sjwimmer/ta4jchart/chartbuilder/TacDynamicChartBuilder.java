@@ -9,7 +9,6 @@ import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
-import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
@@ -28,29 +27,48 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Date;
 
+/**
+ * Dynamic chart builder for TA4J that implements IChartBuilderAdapter.
+ * Supports dynamic datasets, multiple timeframes, and interactive chart features.
+ */
 public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Implement adapter
 
     private static final Logger log = LoggerFactory.getLogger(TacDynamicChartBuilder.class);
 
+	/** Chart theme for styling */
 	private final TacChartTheme theme;
-	private BarSeries currentFullBarSeries; // The full BarSeries for the *current* timeframe
+	/** The full BarSeries for the current timeframe */
+	private BarSeries currentFullBarSeries;
+	/** Multi-timeframe bar series for timeframe switching */
 	private final IBarSeriesMultiTf multiTfBarSeries;
+	/** Trading record for displaying trades on chart */
 	private TradingRecord tradingRecord;
-	private final BarSeriesConverter barSeriesConverter; // For data table model
+	/** Converter for bar series data to table model */
+	private final BarSeriesConverter barSeriesConverter;
+	/** Converter for indicators to time series */
 	private final IndicatorToTimeSeriesConverter indicatorToTimeSeriesConverter;
+	/** Converter for indicators to bar data */
 	private final IndicatorToBarDataConverter indicatorToBarDataConverter;
-	private JFreeChart chart; // Chart instance is mutable on timeframe switch
+	/** Mutable chart instance that changes on timeframe switch */
+	private JFreeChart chart;
 
-    private DynamicWindowOHLCDataset dynamicOHLCDataset;
-    private DomainAxisRangeChangeHandler axisListener; // Store to remove/re-add on TF switch
+	   /** Dynamic OHLC dataset with sliding window */
+	   private DynamicWindowOHLCDataset dynamicOHLCDataset;
+	   /** Axis listener for handling range changes */
+	   private DomainAxisRangeChangeHandler axisListener;
 
+	/** Data table model for chart data */
 	private final TacDataTableModel dataTableModel = new TacDataTableModel();
-    private final List<IndicatorConfiguration.Builder<?>> indicatorConfigBuilders = new ArrayList<>();
+	   /** List of indicator configuration builders */
+	   private final List<IndicatorConfiguration.Builder<?>> indicatorConfigBuilders = new ArrayList<>();
 
-	private int overlayIndicatorIndex = 1; // Dataset 0 is DynamicWindowOHLCDataset
+	/** Index for overlay indicators (dataset 0 is reserved for main dataset) */
+	private int overlayIndicatorIndex = 1;
 
-	private static final int BARS_PER_100PX_VIEWPORT = 8; // For initial viewport
-    private static final int DYNAMIC_DATASET_BUFFER_BARS = 100; // Buffer for dynamic dataset
+	/** Number of bars to display per 100px of viewport width */
+	private static final int BARS_PER_100PX_VIEWPORT = 8;
+	   /** Buffer size for dynamic dataset in bars */
+	   private static final int DYNAMIC_DATASET_BUFFER_BARS = 100;
 
 	public static TacDynamicChartBuilder of(BarSeries barSeries) {
 		return of(barSeries, Theme.LIGHT);
@@ -60,12 +78,25 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 		return new TacDynamicChartBuilder(barSeries, theme);
 	}
 
+	/**
+	 * Private constructor for TacDynamicChartBuilder with bar series and theme.
+	 * @param barSeries the initial bar series
+	 * @param theme the chart theme
+	 */
 	private TacDynamicChartBuilder(BarSeries barSeries, Theme theme) {
 		this(barSeries, new BarSeriesConverterImpl(), new IndicatorToTimeSeriesConverterImpl(), new IndicatorToBarDataConverterImpl(), theme);
 	}
-	
-	private TacDynamicChartBuilder(BarSeries initialBarSeries, BarSeriesConverter barSeriesPlotter, 
-                                 IndicatorToTimeSeriesConverter indicatorConverter, IndicatorToBarDataConverter indToBarDataConverter, Theme chartTheme) {
+
+	/**
+	 * Private constructor for TacDynamicChartBuilder with full dependency injection.
+	 * @param initialBarSeries the initial bar series
+	 * @param barSeriesPlotter converter for bar series data
+	 * @param indicatorConverter converter for indicators to time series
+	 * @param indToBarDataConverter converter for indicators to bar data
+	 * @param chartTheme the chart theme
+	 */
+	private TacDynamicChartBuilder(BarSeries initialBarSeries, BarSeriesConverter barSeriesPlotter,
+	                                 IndicatorToTimeSeriesConverter indicatorConverter, IndicatorToBarDataConverter indToBarDataConverter, Theme chartTheme) {
 		this.theme = (chartTheme == Theme.DARK) ? new DarkTacChartTheme() : new LightTacChartTheme();
 		this.barSeriesConverter = barSeriesPlotter;
 		this.indicatorToTimeSeriesConverter = indicatorConverter;
@@ -140,6 +171,11 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         }
     }
 
+    /**
+     * Calculates the average bar duration in milliseconds for the given series.
+     * @param series the bar series to analyze
+     * @return average bar duration in milliseconds, defaults to 5 minutes if calculation fails
+     */
     private long calculateAverageBarDuration(BarSeries series) {
         if (series == null || series.getBarCount() < 2) return 5 * 60 * 1000L; // Default 5 min
         if (series instanceof IBarSeriesMultiTf) {
@@ -151,6 +187,12 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         return (diff > 0) ? diff : 5 * 60 * 1000L;
     }
 
+    /**
+     * Calculates the number of bars to display for the given viewport width.
+     * @param panelWidth the width of the chart panel in pixels
+     * @param totalBars the total number of bars available
+     * @return number of bars to display, between 10 and totalBars
+     */
     private int calculateBarsToDisplayForViewport(int panelWidth, int totalBars) {
         int bars = (panelWidth > 0) ? (int)(((double)panelWidth / 100.0) * BARS_PER_100PX_VIEWPORT) : 100;
         bars = Math.max(10, bars); // Min 10 bars
@@ -235,6 +277,11 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         return this.chart;
     }
 
+	/**
+	 * Creates a new JFreeChart with dynamic dataset for the specified bar series.
+	 * @param seriesForChart the bar series to create chart for
+	 * @return new JFreeChart instance with dynamic dataset
+	 */
 	private JFreeChart createNewChartWithDynamicDataset(final BarSeries seriesForChart) {
 		final String seriesName = (seriesForChart != null) ? seriesForChart.getName() : "No Data";
 		final DateAxis timeAxis = new DateAxis("Time");
@@ -243,9 +290,9 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 		
         this.dynamicOHLCDataset = new DynamicWindowOHLCDataset(seriesForChart, seriesName, DYNAMIC_DATASET_BUFFER_BARS);
         
-		final XYPlot mainPlot = new XYPlot(this.dynamicOHLCDataset, null, valueAxis, candlestickRenderer);
+		final XYPlot mainPlot = new OptimizedXYPlot(this.dynamicOHLCDataset, null, valueAxis, candlestickRenderer);
 		setPlotTheme(mainPlot); // Theme the main plot
-		final CombinedDomainXYPlot combinedDomainPlot = new CombinedDomainXYPlot(timeAxis);
+		final CombinedDomainXYPlot combinedDomainPlot = new OptimizedDomainXYPlot(timeAxis);
         combinedDomainPlot.setGap(10.0); // Gap between main plot and subplots
 		combinedDomainPlot.add(mainPlot, 10); // Main plot gets more weight
 
@@ -278,6 +325,11 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         return this;
     }
 
+    /**
+     * Adds an indicator to the chart plot based on configuration.
+     * @param config the indicator configuration
+     * @param fullSeriesForIndicator the full bar series for the indicator
+     */
     private void addIndicatorToPlot(IndicatorConfiguration<?> config, BarSeries fullSeriesForIndicator) {
         // Important: Indicators operate on the *full* series provided.
         // This logic largely matches the original TacChartBuilder.
@@ -310,14 +362,14 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 			if(config.getChartType() == ChartType.BAR) {
 				final TacBarDataset barDs = indicatorToBarDataConverter.convert(indicator, config.getName());
 				final TacBarRenderer barRend = createBarRenderer(config);
-                subplot = new XYPlot(barDs, null, subplotYAxis, barRend);
+                subplot = new OptimizedXYPlot(barDs, null, subplotYAxis, barRend);
 				if (config.isAddToDataTable()) this.dataTableModel.addEntries(barDs);
 		} else {
             @SuppressWarnings("unchecked")
             final DynamicWindowXYDataset indicatorDataset = new DynamicWindowXYDataset(fullSeriesForIndicator, (Indicator<Num>) indicator, config.getName(), DYNAMIC_DATASET_BUFFER_BARS);
             this.axisListener.addDataset(indicatorDataset);
 				final XYLineAndShapeRenderer lineRend = createLineRenderer(config);
-            subplot = new XYPlot(indicatorDataset, null, subplotYAxis, lineRend);
+            subplot = new OptimizedXYPlot(indicatorDataset, null, subplotYAxis, lineRend);
 			if (config.isAddToDataTable()) {
                 this.dataTableModel.addEntries(this.indicatorToTimeSeriesConverter.convert(indicator, config.getName()));
 			}
@@ -327,6 +379,10 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 		}
 	}
 
+	/**
+	 * Applies the current theme styling to the specified XY plot.
+	 * @param plot the plot to theme
+	 */
 	private void setPlotTheme(XYPlot plot) {
 		final Color labelFg = UIManager.getColor("Label.foreground");
         final Color panelBg = UIManager.getColor("Panel.background");
@@ -345,12 +401,22 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 		}
 	}
 
+	/**
+	 * Creates a bar renderer for the given indicator configuration.
+	 * @param cfg the indicator configuration
+	 * @return configured bar renderer
+	 */
 	private TacBarRenderer createBarRenderer(IndicatorConfiguration<?> cfg) {
 		return new TacBarRenderer(cfg.getColor());
 	}
 
+	/**
+	 * Creates a line and shape renderer for the given indicator configuration.
+	 * @param cfg the indicator configuration
+	 * @return configured line and shape renderer
+	 */
 	private XYLineAndShapeRenderer createLineRenderer(IndicatorConfiguration<?> cfg) {
-		XYLineAndShapeRenderer rend = new XYLineAndShapeRenderer(true, true); // lines, shapes
+		XYLineAndShapeRenderer rend = new OptmizedXYLineAndShapeRenderer(true, true); // lines, shapes
 		rend.setSeriesShape(0, cfg.getShape());
 		rend.setSeriesPaint(0, cfg.getColor());
         rend.setSeriesStroke(0, new BasicStroke(1.5f));
