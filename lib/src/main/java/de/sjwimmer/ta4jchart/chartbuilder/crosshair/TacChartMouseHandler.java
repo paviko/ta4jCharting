@@ -125,7 +125,7 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay, Datase
                 XYPlot subPlot = (XYPlot) iterator.next();
                 subPlot.setDomainCrosshairVisible(true);
                 subPlot.setDomainCrosshairValue(findClosestXValue(xx));
-                if(subplotIndex == plotIndex) {
+                if(subplotIndex == plotIndex && panelArea != null) {
                     double yy = subPlot.getRangeAxis().java2DToValue(point.getY(), panelArea, subPlot.getRangeAxisEdge());
                     log.debug("y: {} yy: {}", y, yy);
                     subPlot.setRangeCrosshairVisible(true);

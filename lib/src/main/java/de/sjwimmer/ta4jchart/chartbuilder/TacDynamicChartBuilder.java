@@ -3,6 +3,7 @@ package de.sjwimmer.ta4jchart.chartbuilder;
 import de.sjwimmer.ta4jchart.chartbuilder.converter.*;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
 import de.sjwimmer.ta4jchart.chartbuilder.dataset.DynamicWindowOHLCDataset;
+import de.sjwimmer.ta4jchart.chartbuilder.dataset.DynamicWindowXYDataset;
 import de.sjwimmer.ta4jchart.chartbuilder.listener.DomainAxisRangeChangeHandler;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
 import org.jfree.chart.JFreeChart;
@@ -19,6 +20,7 @@ import org.ta4j.core.BarSeries;
 import org.ta4j.core.Indicator;
 import org.ta4j.core.TradingRecord;
 import com.limemojito.trading.model.bar.Bar.Period;
+import org.ta4j.core.num.Num;
 
 import javax.swing.*;
 import java.awt.*;
@@ -108,10 +110,7 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         if (barsToDisplay <= 0) {
              dateAxis.setAutoRange(true);
              if (!this.currentFullBarSeries.isEmpty()) {
-                 this.dynamicOHLCDataset.updateWindow(
-                    this.currentFullBarSeries.getBar(this.currentFullBarSeries.getBeginIndex()).getEndTime().toInstant().toEpochMilli() - avgBarDuration,
-                    this.currentFullBarSeries.getBar(this.currentFullBarSeries.getEndIndex()).getEndTime().toInstant().toEpochMilli() + avgBarDuration
-                 );
+             this.axisListener.axisChanged(null); // Trigger update for all datasets
              }
              return;
         }
@@ -135,12 +134,9 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
             dateAxis.setAutoRange(false); 
         } else {
             dateAxis.setAutoRange(true); 
-            if (!this.currentFullBarSeries.isEmpty()) { // Still trigger an update for autorange
-                 this.dynamicOHLCDataset.updateWindow(
-                    this.currentFullBarSeries.getBar(this.currentFullBarSeries.getBeginIndex()).getEndTime().toInstant().toEpochMilli() - avgBarDuration,
-                    this.currentFullBarSeries.getBar(this.currentFullBarSeries.getEndIndex()).getEndTime().toInstant().toEpochMilli() + avgBarDuration
-                 );
-            }
+        if (!this.currentFullBarSeries.isEmpty()) {
+            this.axisListener.axisChanged(new org.jfree.chart.event.AxisChangeEvent(dateAxis)); // Trigger update for all datasets
+        }
         }
     }
 
@@ -178,14 +174,9 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         this.currentFullBarSeries = this.multiTfBarSeries.at(newTimeframe);
         if (this.currentFullBarSeries == null || this.currentFullBarSeries.isEmpty()) {
             log.error("Failed to get BarSeries for timeframe: {} or series is empty.", newTimeframe);
-            this.currentFullBarSeries = new org.ta4j.core.BaseBarSeries("Empty " + newTimeframe.name()); // Empty placeholder
-            // Update dynamic dataset with empty series
-            this.dynamicOHLCDataset.setFullBarSeries(this.currentFullBarSeries, this.currentFullBarSeries.getName());
-             // Chart will show nothing, data table will be empty
-        } else {
-             // Update the existing dynamic dataset with the new full series
-            this.dynamicOHLCDataset.setFullBarSeries(this.currentFullBarSeries, this.currentFullBarSeries.getName());
+            this.currentFullBarSeries = new org.ta4j.core.BaseBarSeries("Empty " + newTimeframe.name());
         }
+        this.dynamicOHLCDataset.setFullBarSeries(this.currentFullBarSeries, this.currentFullBarSeries.getName());
 
 
         // Chart title
@@ -198,18 +189,21 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         }
 
 
-        // Clear and re-add indicators from main plot and remove subplots
-        XYPlot mainPlot = (XYPlot) ((CombinedDomainXYPlot) this.chart.getPlot()).getSubplots().get(0);
-        this.overlayIndicatorIndex = 1; // Reset for new indicators
-        for (int i = mainPlot.getDatasetCount() - 1; i >= overlayIndicatorIndex; i--) {
-            mainPlot.setDataset(i, null);
-            mainPlot.setRenderer(i, null);
-        }
-        CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) this.chart.getPlot();
-        List<XYPlot> subplotsToRemove = new ArrayList<>();
-        for (int i = 1; i < combinedPlot.getSubplots().size(); i++) { // Keep main plot at index 0
-            subplotsToRemove.add((XYPlot) combinedPlot.getSubplots().get(i));
-        }
+    CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) this.chart.getPlot();
+    XYPlot mainPlot = (XYPlot) combinedPlot.getSubplots().get(0);
+    this.overlayIndicatorIndex = 1; // Reset for new indicators
+    for (int i = mainPlot.getDatasetCount() - 1; i >= overlayIndicatorIndex; i--) {
+        mainPlot.setDataset(i, null);
+        mainPlot.setRenderer(i, null);
+    }
+
+    this.axisListener.clearAllDatasets();
+    this.axisListener.addDataset(this.dynamicOHLCDataset);
+
+    List<XYPlot> subplotsToRemove = new ArrayList<>();
+    for (int i = 1; i < combinedPlot.getSubplots().size(); i++) { // Keep main plot at index 0
+        subplotsToRemove.add((XYPlot) combinedPlot.getSubplots().get(i));
+    }
         for (XYPlot subplot : subplotsToRemove) {
             combinedPlot.remove(subplot);
         }
@@ -272,7 +266,7 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         if (this.axisListener != null && combinedDomainPlot.getDomainAxis() != null) {
             combinedDomainPlot.getDomainAxis().removeChangeListener(this.axisListener);
         }
-        this.axisListener = new DomainAxisRangeChangeHandler(this.dynamicOHLCDataset, combinedDomainPlot.getDomainAxis());
+    this.axisListener = new DomainAxisRangeChangeHandler(combinedDomainPlot.getDomainAxis(), this.dynamicOHLCDataset);
         combinedDomainPlot.getDomainAxis().addChangeListener(this.axisListener);
         
         return newChart;
@@ -318,14 +312,18 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 				final TacBarRenderer barRend = createBarRenderer(config);
                 subplot = new XYPlot(barDs, null, subplotYAxis, barRend);
 				if (config.isAddToDataTable()) this.dataTableModel.addEntries(barDs);
-			} else { // Default to LINE for subplots if not BAR
-				final TimeSeriesCollection tsColl = this.indicatorToTimeSeriesConverter.convert(indicator, config.getName());
+		} else {
+            @SuppressWarnings("unchecked")
+            final DynamicWindowXYDataset indicatorDataset = new DynamicWindowXYDataset(fullSeriesForIndicator, (Indicator<Num>) indicator, config.getName(), DYNAMIC_DATASET_BUFFER_BARS);
+            this.axisListener.addDataset(indicatorDataset);
 				final XYLineAndShapeRenderer lineRend = createLineRenderer(config);
-                subplot = new XYPlot(tsColl, null, subplotYAxis, lineRend);
-				if (config.isAddToDataTable()) this.dataTableModel.addEntries(tsColl);
+            subplot = new XYPlot(indicatorDataset, null, subplotYAxis, lineRend);
+			if (config.isAddToDataTable()) {
+                this.dataTableModel.addEntries(this.indicatorToTimeSeriesConverter.convert(indicator, config.getName()));
 			}
-            setPlotTheme(subplot); // Theme the new subplot
-            combinedPlot.add(subplot, 1); // Add subplot with weight
+		}
+        setPlotTheme(subplot);
+        combinedPlot.add(subplot, 1);
 		}
 	}
 

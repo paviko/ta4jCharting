@@ -11,7 +11,7 @@ import org.ta4j.core.BarSeries;
 
 import java.util.Date;
 
-public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCDataset {
+public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCDataset, IDynamicDataset {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicWindowOHLCDataset.class);
 
