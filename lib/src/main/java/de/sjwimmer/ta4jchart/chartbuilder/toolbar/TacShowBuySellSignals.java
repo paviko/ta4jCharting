@@ -1,11 +1,12 @@
 package de.sjwimmer.ta4jchart.chartbuilder.toolbar;
 
 import de.sjwimmer.ta4jchart.chartbuilder.TacChart;
-import de.sjwimmer.ta4jchart.chartbuilder.TacChartBuilder;
+import de.sjwimmer.ta4jchart.chartbuilder.axis.BarIndexDateAxis;
 import org.jfree.chart.JFreeChart;
 import org.jfree.chart.annotations.XYAnnotation;
 import org.jfree.chart.annotations.XYLineAnnotation;
 import org.jfree.chart.annotations.XYTextAnnotation;
+import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.ui.TextAnchor;
@@ -122,6 +123,21 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
         return null;
     }
 
+    /** True when the chart's domain axis positions bars by index rather than by timestamp. */
+    private boolean usesIndexDomain(JFreeChart chartInstance) {
+        if (chartInstance == null || chartInstance.getPlot() == null) {
+            return false;
+        }
+        if (chartInstance.getPlot() instanceof CombinedDomainXYPlot) {
+            ValueAxis domainAxis = ((CombinedDomainXYPlot) chartInstance.getPlot()).getDomainAxis();
+            return domainAxis instanceof BarIndexDateAxis;
+        }
+        if (chartInstance.getPlot() instanceof XYPlot) {
+            return ((XYPlot) chartInstance.getPlot()).getDomainAxis() instanceof BarIndexDateAxis;
+        }
+        return false;
+    }
+
     public void addBuySellSignals(TradingRecord record, BarSeries series, JFreeChart chartInstance) {
         final XYPlot mainPlot = getMainPlot(chartInstance);
         if (mainPlot == null) {
@@ -134,6 +150,10 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
         if (record == null || series == null || series.isEmpty() || record.getPositions().isEmpty()) {
             return; // Nothing to draw
         }
+
+        // The dynamic chart uses an index-based domain axis (candles packed with no time gaps), so
+        // annotations must be anchored to the bar index; the static chart still uses real timestamps.
+        final boolean indexDomain = usesIndexDomain(chartInstance);
 
         for (Position position : record.getPositions()) {
             if (position.getEntry() == null || position.getExit() == null) {
@@ -156,9 +176,9 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
             final Bar entryBar = series.getBar(entryIndex);
             final Bar exitBar = series.getBar(exitIndex);
 
-            final double entryMillis = entryBar.getEndTime().toInstant().toEpochMilli();
+            final double entryX = indexDomain ? entryIndex : entryBar.getEndTime().toInstant().toEpochMilli();
             final double entryPrice = entryTrade.getNetPrice().doubleValue();
-            final double exitMillis = exitBar.getEndTime().toInstant().toEpochMilli();
+            final double exitX = indexDomain ? exitIndex : exitBar.getEndTime().toInstant().toEpochMilli();
             final double exitPrice = exitTrade.getNetPrice().doubleValue();
 
             Color positionColor;
@@ -167,15 +187,15 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
 
             if (entryTrade.getType() == Trade.TradeType.BUY) { // BUY position
                 positionColor = Color.GREEN;
-                entryArrowAnnotation = new XYTextAnnotation(UP_ARROW, entryMillis, entryPrice);
+                entryArrowAnnotation = new XYTextAnnotation(UP_ARROW, entryX, entryPrice);
                 entryArrowAnnotation.setTextAnchor(TextAnchor.TOP_CENTER); // Tip of "▲" at price, body below
-                exitArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, exitMillis, exitPrice);
+                exitArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, exitX, exitPrice);
                 exitArrowAnnotation.setTextAnchor(TextAnchor.BOTTOM_CENTER); // Tip of "▼" at price, body above
             } else { // SELL position
                 positionColor = Color.RED;
-                entryArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, entryMillis, entryPrice);
+                entryArrowAnnotation = new XYTextAnnotation(DOWN_ARROW, entryX, entryPrice);
                 entryArrowAnnotation.setTextAnchor(TextAnchor.BOTTOM_CENTER); // Tip of "▼" at price, body above
-                exitArrowAnnotation = new XYTextAnnotation(UP_ARROW, exitMillis, exitPrice);
+                exitArrowAnnotation = new XYTextAnnotation(UP_ARROW, exitX, exitPrice);
                 exitArrowAnnotation.setTextAnchor(TextAnchor.TOP_CENTER); // Tip of "▲" at price, body below
             }
 
@@ -199,7 +219,7 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
             );
 
             XYLineAnnotation connectingLine = new XYLineAnnotation(
-                    entryMillis, entryPrice, exitMillis, exitPrice,
+                    entryX, entryPrice, exitX, exitPrice,
                     dottedStroke, positionColor
             );
             mainPlot.addAnnotation(connectingLine);
@@ -208,7 +228,7 @@ public class TacShowBuySellSignals extends JToggleButton implements ActionListen
             final double profit = position.getProfit().doubleValue();
             final Color profitTextPaint = profit >= 0 ? new Color(0, 128, 0) : Color.RED; // Dark green or red
 
-            double textX = (entryMillis + exitMillis) / 2;
+            double textX = (entryX + exitX) / 2;
             double textY = (entryPrice + exitPrice) / 2;
 
             XYTextAnnotation profitTextAnnotation = new XYTextAnnotation(String.format("%.2f", profit), textX, textY);

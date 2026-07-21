@@ -1,5 +1,6 @@
 package de.sjwimmer.ta4jchart.chartbuilder;
 
+import de.sjwimmer.ta4jchart.chartbuilder.axis.BarIndexDateAxis;
 import de.sjwimmer.ta4jchart.chartbuilder.converter.*;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
 import de.sjwimmer.ta4jchart.chartbuilder.dataset.DynamicWindowOHLCDataset;
@@ -7,12 +8,11 @@ import de.sjwimmer.ta4jchart.chartbuilder.dataset.DynamicWindowXYDataset;
 import de.sjwimmer.ta4jchart.chartbuilder.listener.DomainAxisRangeChangeHandler;
 import de.sjwimmer.ta4jchart.chartbuilder.renderer.*;
 import org.jfree.chart.JFreeChart;
-import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.NumberAxis;
+import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
 import org.jfree.chart.renderer.xy.XYLineAndShapeRenderer;
-import org.jfree.data.time.TimeSeriesCollection;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.ta4j.core.BarSeries;
@@ -25,7 +25,6 @@ import javax.swing.*;
 import java.awt.*;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Date;
 
 /**
  * Dynamic chart builder for TA4J that implements IChartBuilderAdapter.
@@ -133,58 +132,28 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
         }
 
         CombinedDomainXYPlot combinedPlot = (CombinedDomainXYPlot) chartToConfigure.getPlot();
-        DateAxis dateAxis = (DateAxis) combinedPlot.getDomainAxis();
+        ValueAxis domainAxis = combinedPlot.getDomainAxis();
 
-        long avgBarDuration = calculateAverageBarDuration(this.currentFullBarSeries);
         int barsToDisplay = calculateBarsToDisplayForViewport(chartPanelWidth, this.currentFullBarSeries.getBarCount());
 
         if (barsToDisplay <= 0) {
-             dateAxis.setAutoRange(true);
+             domainAxis.setAutoRange(true);
              if (!this.currentFullBarSeries.isEmpty()) {
-             this.axisListener.axisChanged(null); // Trigger update for all datasets
+                 this.axisListener.axisChanged(null); // Trigger update for all datasets
              }
              return;
         }
-        
+
+        // The domain axis is index-based: one integer slot per bar. Show the last `barsToDisplay`
+        // bars, with half a slot of padding on the left and one empty slot on the right so the last
+        // candle is not glued to the axis. Setting the range triggers the axis listener, which
+        // refreshes every dynamic dataset's window.
+        int beginIndex = this.currentFullBarSeries.getBeginIndex();
         int endIndex = this.currentFullBarSeries.getEndIndex();
-        long lastBarEndTime = this.currentFullBarSeries.getBar(endIndex).getEndTime().toInstant().toEpochMilli();
-        long viewUpperBound = lastBarEndTime + avgBarDuration; // Add padding
+        int firstVisibleBarFullIndex = Math.max(beginIndex, endIndex - barsToDisplay + 1);
 
-        int firstVisibleBarFullIndex = Math.max(this.currentFullBarSeries.getBeginIndex(), endIndex - barsToDisplay + 1);
-        long viewLowerBound;
-        if (firstVisibleBarFullIndex > this.currentFullBarSeries.getBeginIndex()) {
-            // Start view from the end time of the bar *before* the first visible one
-            viewLowerBound = this.currentFullBarSeries.getBar(firstVisibleBarFullIndex - 1).getEndTime().toInstant().toEpochMilli();
-        } else {
-            // First visible is the first bar in series, approximate its start time
-            viewLowerBound = this.currentFullBarSeries.getBar(firstVisibleBarFullIndex).getEndTime().toInstant().toEpochMilli() - avgBarDuration;
-        }
-        
-        if (viewLowerBound < viewUpperBound) {
-            dateAxis.setRange(new Date(viewLowerBound), new Date(viewUpperBound)); // This triggers axisListener -> dynamicOHLCDataset.updateWindow()
-            dateAxis.setAutoRange(false); 
-        } else {
-            dateAxis.setAutoRange(true); 
-        if (!this.currentFullBarSeries.isEmpty()) {
-            this.axisListener.axisChanged(new org.jfree.chart.event.AxisChangeEvent(dateAxis)); // Trigger update for all datasets
-        }
-        }
-    }
-
-    /**
-     * Calculates the average bar duration in milliseconds for the given series.
-     * @param series the bar series to analyze
-     * @return average bar duration in milliseconds, defaults to 5 minutes if calculation fails
-     */
-    private long calculateAverageBarDuration(BarSeries series) {
-        if (series == null || series.getBarCount() < 2) return 5 * 60 * 1000L; // Default 5 min
-        if (series instanceof IBarSeriesMultiTf) {
-            Period p = ((IBarSeriesMultiTf) series).getPeriod();
-            if (p != null && p.getDuration() != null) return p.getDuration().toMillis();
-        }
-        long diff = series.getBar(series.getEndIndex()).getEndTime().toInstant().toEpochMilli() -
-                    series.getBar(series.getEndIndex() - 1).getEndTime().toInstant().toEpochMilli();
-        return (diff > 0) ? diff : 5 * 60 * 1000L;
+        domainAxis.setRange(firstVisibleBarFullIndex - 0.5, endIndex + 1.5);
+        domainAxis.setAutoRange(false);
     }
 
     /**
@@ -209,9 +178,16 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 			((ITradingRecordMultiTf) this.tradingRecord).setTargetPeriod(newTimeframe);
 		}
 
-        DateAxis oldDateAxis = (DateAxis) ((CombinedDomainXYPlot) this.chart.getPlot()).getDomainAxis();
-        Date oldLower = oldDateAxis.getMinimumDate();
-        Date oldUpper = oldDateAxis.getMaximumDate();
+        BarIndexDateAxis domainAxis = (BarIndexDateAxis) ((CombinedDomainXYPlot) this.chart.getPlot()).getDomainAxis();
+        // Remember the currently visible time span (via the OLD series) so we can restore the same
+        // window after switching, even though a given index means a different time per timeframe.
+        BarSeries oldFullBarSeries = this.currentFullBarSeries;
+        long oldViewStartTime = Long.MIN_VALUE;
+        long oldViewEndTime = Long.MIN_VALUE;
+        if (oldFullBarSeries != null && !oldFullBarSeries.isEmpty()) {
+            oldViewStartTime = timeAtIndex(oldFullBarSeries, domainAxis.getRange().getLowerBound());
+            oldViewEndTime = timeAtIndex(oldFullBarSeries, domainAxis.getRange().getUpperBound());
+        }
 
         this.currentFullBarSeries = this.multiTfBarSeries.at(newTimeframe);
         if (this.currentFullBarSeries == null || this.currentFullBarSeries.isEmpty()) {
@@ -219,6 +195,7 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
             this.currentFullBarSeries = new org.ta4j.core.BaseBarSeries("Empty " + newTimeframe.name());
         }
         this.dynamicOHLCDataset.setFullBarSeries(this.currentFullBarSeries, this.currentFullBarSeries.getName());
+        domainAxis.setBarSeries(this.currentFullBarSeries);
 
 
         // Chart title
@@ -255,26 +232,57 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
             addIndicatorToPlot(icBuilder.build(), this.currentFullBarSeries);
         }
         
-        // Attempt to restore viewport or set initial for new timeframe
-        // This will trigger the axisListener, which updates dynamicOHLCDataset's window
-        DateAxis dateAxis = (DateAxis) combinedPlot.getDomainAxis();
+        // Attempt to restore viewport or set initial for new timeframe. Setting the axis range
+        // triggers the axisListener, which updates every dynamic dataset's window. We map the
+        // previously visible time span onto the new series' bar indices.
         boolean restored = false;
-        if (oldLower != null && oldUpper != null && !this.currentFullBarSeries.isEmpty()) {
-            long firstBarTime = this.currentFullBarSeries.getBar(this.currentFullBarSeries.getBeginIndex()).getEndTime().toInstant().toEpochMilli();
-            long lastBarTime = this.currentFullBarSeries.getBar(this.currentFullBarSeries.getEndIndex()).getEndTime().toInstant().toEpochMilli();
-            long newLower = Math.max(oldLower.getTime(), firstBarTime);
-            long newUpper = Math.min(oldUpper.getTime(), lastBarTime);
-            if (newLower < newUpper && (newUpper - newLower > 60000)) { // Valid and reasonable range
-                 dateAxis.setRange(new Date(newLower), new Date(newUpper));
-                 dateAxis.setAutoRange(false);
-                 restored = true;
+        if (oldViewStartTime != Long.MIN_VALUE && !this.currentFullBarSeries.isEmpty()) {
+            int newLowerIdx = nearestIndexForTime(this.currentFullBarSeries, oldViewStartTime);
+            int newUpperIdx = nearestIndexForTime(this.currentFullBarSeries, oldViewEndTime);
+            if (newUpperIdx > newLowerIdx) {
+                domainAxis.setRange(newLowerIdx - 0.5, newUpperIdx + 0.5);
+                domainAxis.setAutoRange(false);
+                restored = true;
             }
         }
         if (!restored) {
             setInitialChartViewport(this.chart, -1); // Use a default width if not restored
         }
-        
+
         return this.chart;
+    }
+
+    /** Returns the end-time millis of the bar nearest to the given (possibly fractional) index. */
+    private static long timeAtIndex(BarSeries series, double indexValue) {
+        int idx = (int) Math.round(indexValue);
+        idx = Math.max(series.getBeginIndex(), Math.min(idx, series.getEndIndex()));
+        return series.getBar(idx).getEndTime().toInstant().toEpochMilli();
+    }
+
+    /** Binary-searches the series for the bar whose end time is closest to the given millis. */
+    private static int nearestIndexForTime(BarSeries series, long timeMillis) {
+        int begin = series.getBeginIndex();
+        int end = series.getEndIndex();
+        int low = begin;
+        int high = end;
+        while (low < high) {
+            int mid = low + (high - low) / 2;
+            long midTime = series.getBar(mid).getEndTime().toInstant().toEpochMilli();
+            if (midTime < timeMillis) {
+                low = mid + 1;
+            } else {
+                high = mid;
+            }
+        }
+        // low is the first bar with endTime >= timeMillis; the previous bar may be closer.
+        if (low > begin) {
+            long lowTime = series.getBar(low).getEndTime().toInstant().toEpochMilli();
+            long prevTime = series.getBar(low - 1).getEndTime().toInstant().toEpochMilli();
+            if (Math.abs(prevTime - timeMillis) <= Math.abs(lowTime - timeMillis)) {
+                return low - 1;
+            }
+        }
+        return low;
     }
 
 	/**
@@ -284,7 +292,7 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 	 */
 	private JFreeChart createNewChartWithDynamicDataset(final BarSeries seriesForChart) {
 		final String seriesName = (seriesForChart != null) ? seriesForChart.getName() : "No Data";
-		final DateAxis timeAxis = new DateAxis("Time");
+		final BarIndexDateAxis timeAxis = new BarIndexDateAxis("Time", seriesForChart);
 		final NumberAxis valueAxis = new NumberAxis("Price/Value");
 		final TacCandlestickRenderer candlestickRenderer = new TacCandlestickRenderer();
 		
@@ -339,11 +347,15 @@ public class TacDynamicChartBuilder implements IChartBuilderAdapter { // Impleme
 
 		if(config.getPlotType() == PlotType.OVERLAY) {
 			if(config.getChartType() == ChartType.LINE) {
-				final TimeSeriesCollection tsColl = this.indicatorToTimeSeriesConverter.convert(indicator, config.getName());
+				// Use an index-based dynamic dataset so overlay lines line up with the gap-free candles
+				// (a plain TimeSeriesCollection would plot against real timestamps and fall off the axis).
+				@SuppressWarnings("unchecked")
+				final DynamicWindowXYDataset overlayDataset = new DynamicWindowXYDataset(fullSeriesForIndicator, (Indicator<Num>) indicator, config.getName(), DYNAMIC_DATASET_BUFFER_BARS);
+				this.axisListener.addDataset(overlayDataset);
 				final XYLineAndShapeRenderer lineRend = createLineRenderer(config);
 				mainCandlestickPlot.setRenderer(overlayIndicatorIndex, lineRend);
-				mainCandlestickPlot.setDataset(overlayIndicatorIndex, tsColl);
-				if (config.isAddToDataTable()) this.dataTableModel.addEntries(tsColl);
+				mainCandlestickPlot.setDataset(overlayIndicatorIndex, overlayDataset);
+				if (config.isAddToDataTable()) this.dataTableModel.addEntries(this.indicatorToTimeSeriesConverter.convert(indicator, config.getName()));
 				overlayIndicatorIndex++;
 			} else if(config.getChartType() == ChartType.BAR) {
 				final TacBarDataset barDs = indicatorToBarDataConverter.convert(indicator, config.getName());

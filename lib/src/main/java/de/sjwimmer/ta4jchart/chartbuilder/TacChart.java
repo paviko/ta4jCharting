@@ -12,7 +12,6 @@ import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacTimeframeButtons;
 import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacZoomButtons;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
-import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
@@ -142,27 +141,26 @@ public class TacChart extends JPanel {
             }
 
             private void handlePanning(KeyEvent e, ValueAxis domainAxis) {
-                if (!(domainAxis instanceof DateAxis)) {
+                if (domainAxis == null) {
                     return;
                 }
-                DateAxis dateAxis = (DateAxis) domainAxis;
                 boolean panned = false;
 
                 int keyCode = e.getKeyCode();
                 if (keyCode == KeyEvent.VK_LEFT) {
-                    dateAxis.pan(-KEYBOARD_PAN_PERCENTAGE);
+                    domainAxis.pan(-KEYBOARD_PAN_PERCENTAGE);
                     panned = true;
                     e.consume();
                 } else if (keyCode == KeyEvent.VK_RIGHT) {
-                    dateAxis.pan(KEYBOARD_PAN_PERCENTAGE);
+                    domainAxis.pan(KEYBOARD_PAN_PERCENTAGE);
                     panned = true;
                     e.consume();
                 } else if (keyCode == KeyEvent.VK_PAGE_UP) {
-                    dateAxis.pan(-KEYBOARD_PAGE_PAN_PERCENTAGE);
+                    domainAxis.pan(-KEYBOARD_PAGE_PAN_PERCENTAGE);
                     panned = true;
                     e.consume();
                 } else if (keyCode == KeyEvent.VK_PAGE_DOWN) {
-                    dateAxis.pan(KEYBOARD_PAGE_PAN_PERCENTAGE);
+                    domainAxis.pan(KEYBOARD_PAGE_PAN_PERCENTAGE);
                     panned = true;
                     e.consume();
                 }

@@ -4,7 +4,6 @@ import de.sjwimmer.ta4jchart.chartbuilder.toolbar.TacAutoRangeButton;
 import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
-import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
@@ -103,9 +102,7 @@ public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelLi
                 rangeAxis = ((XYPlot) plot).getRangeAxis();
             }
 
-            if (domainAxis instanceof DateAxis) {
-                DateAxis dateAxis = (DateAxis) domainAxis;
-                
+            if (domainAxis != null) {
                 double dx = e.getX() - panLastPoint.getX();
                 // Pan based on pixel movement relative to chart width
                 Rectangle2D dataArea = chartPanel.getScreenDataArea();
@@ -113,8 +110,8 @@ public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelLi
 
                 double chartWidth = dataArea.getWidth();
                 double panPercentX = -dx / chartWidth; // Negative: drag right moves time forward (data left)
-                
-                dateAxis.pan(panPercentX);
+
+                domainAxis.pan(panPercentX);
                 
                 // Handle Y-axis panning when auto-range is disabled
                 if (tacAutoRangeButton != null && !tacAutoRangeButton.isSelected() && rangeAxis != null) {
@@ -239,12 +236,10 @@ public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelLi
             e.consume();
         }
         // Otherwise zoom X axis (default behavior)
-        else if (domainAxis instanceof DateAxis) {
-            DateAxis dateAxis = (DateAxis) domainAxis;
-            
+        else if (domainAxis != null) {
             // Get current X-axis range
-            double lower = dateAxis.getRange().getLowerBound();
-            double upper = dateAxis.getRange().getUpperBound();
+            double lower = domainAxis.getRange().getLowerBound();
+            double upper = domainAxis.getRange().getUpperBound();
             double length = upper - lower;
             double newLength = length * zoomFactor;
             
@@ -258,10 +253,10 @@ public class PanAndShiftZoomHandler extends MouseAdapter implements MouseWheelLi
             double pointOnAxis = lower + (length * positionFactor);
             double newLower = pointOnAxis - (newLength * positionFactor);
             double newUpper = newLower + newLength;
-            
+
             // Set the new range
-            dateAxis.setRange(newLower, newUpper);
-            
+            domainAxis.setRange(newLower, newUpper);
+
             // Handle Y-axis auto-range if needed
             if (tacAutoRangeButton != null && tacAutoRangeButton.isSelected()) {
                 TacChartUtils.applyAutoRangeState(chart, true);

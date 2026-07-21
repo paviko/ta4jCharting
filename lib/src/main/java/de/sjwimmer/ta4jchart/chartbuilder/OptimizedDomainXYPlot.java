@@ -1,7 +1,7 @@
 package de.sjwimmer.ta4jchart.chartbuilder;
 
 import org.jfree.chart.axis.AxisLocation;
-import org.jfree.chart.axis.DateAxis;
+import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 
 /**
@@ -13,11 +13,11 @@ public class OptimizedDomainXYPlot extends CombinedDomainXYPlot {
     private AxisLocation mainRangeAxisLocation;
 
     /**
-     * Constructs an OptimizedDomainXYPlot with the specified time axis.
-     * @param timeAxis the date axis for the domain
+     * Constructs an OptimizedDomainXYPlot with the specified domain axis.
+     * @param domainAxis the value axis for the domain
      */
-    public OptimizedDomainXYPlot(DateAxis timeAxis) {
-        super(timeAxis);
+    public OptimizedDomainXYPlot(ValueAxis domainAxis) {
+        super(domainAxis);
         mainDomainAxisLocation = AxisLocation.BOTTOM_OR_LEFT;
         mainRangeAxisLocation = AxisLocation.BOTTOM_OR_LEFT;
     }

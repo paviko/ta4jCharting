@@ -3,7 +3,6 @@ package de.sjwimmer.ta4jchart.chartbuilder.toolbar;
 import de.sjwimmer.ta4jchart.chartbuilder.utils.TacChartUtils;
 import org.jfree.chart.ChartPanel;
 import org.jfree.chart.JFreeChart;
-import org.jfree.chart.axis.DateAxis;
 import org.jfree.chart.axis.ValueAxis;
 import org.jfree.chart.plot.CombinedDomainXYPlot;
 import org.jfree.chart.plot.XYPlot;
@@ -48,14 +47,13 @@ public class TacZoomButtons {
             } else if (plot instanceof XYPlot) {
                 domainAxis = ((XYPlot) plot).getDomainAxis();
             }
-            if (domainAxis instanceof DateAxis) {
-                DateAxis dateAxis = (DateAxis) domainAxis;
-                double lower = dateAxis.getRange().getLowerBound();
-                double upper = dateAxis.getRange().getUpperBound();
+            if (domainAxis != null) {
+                double lower = domainAxis.getRange().getLowerBound();
+                double upper = domainAxis.getRange().getUpperBound();
                 double length = upper - lower;
                 double newLength = length * 0.5;
                 double newLower = upper - newLength;
-                dateAxis.setRange(newLower, upper);
+                domainAxis.setRange(newLower, upper);
                 if (tacAutoRangeButton.isSelected()) {
                     // After zooming, if Y-axes are set to auto-range, force them to readjust
                     TacChartUtils.applyAutoRangeState(chart, true);
@@ -78,14 +76,13 @@ public class TacZoomButtons {
             } else if (plot instanceof XYPlot) {
                 domainAxis = ((XYPlot) plot).getDomainAxis();
             }
-            if (domainAxis instanceof DateAxis) {
-                DateAxis dateAxis = (DateAxis) domainAxis;
-                double lower = dateAxis.getRange().getLowerBound();
-                double upper = dateAxis.getRange().getUpperBound();
+            if (domainAxis != null) {
+                double lower = domainAxis.getRange().getLowerBound();
+                double upper = domainAxis.getRange().getUpperBound();
                 double length = upper - lower;
                 double newLength = length * 2.0;
                 double newLower = upper - newLength;
-                dateAxis.setRange(newLower, upper);
+                domainAxis.setRange(newLower, upper);
                 if (tacAutoRangeButton.isSelected()) {
                     // After zooming, if Y-axes are set to auto-range, force them to readjust
                     TacChartUtils.applyAutoRangeState(chart, true);

@@ -2,7 +2,6 @@ package de.sjwimmer.ta4jchart.chartbuilder.dataset;
 
 import org.jfree.data.xy.AbstractXYDataset;
 import org.jfree.data.xy.OHLCDataset;
-import org.jfree.data.general.DatasetChangeEvent;
 import org.jfree.data.DomainOrder;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +10,12 @@ import org.ta4j.core.BarSeries;
 
 import java.util.Date;
 
+/**
+ * Sliding-window OHLC dataset whose X coordinate is the bar's index in the full series rather than
+ * its timestamp. Placing bars at consecutive integer positions keeps candles evenly spaced with no
+ * gaps for periods that carry no data (weekends, holidays, market closes). Timestamps are still kept
+ * for the OHLC tooltip/date lookup via {@link #indexToTimeMillis(double)}.
+ */
 public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCDataset, IDynamicDataset {
 
     private static final Logger log = LoggerFactory.getLogger(DynamicWindowOHLCDataset.class);
@@ -47,17 +52,10 @@ public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCD
     public synchronized void setFullBarSeries(BarSeries newFullBarSeries, String newSeriesKey) {
         this.fullBarSeries = newFullBarSeries;
         this.seriesKey = newSeriesKey;
-        if (this.fullBarSeries == null || this.fullBarSeries.isEmpty()) {
-            clearWindowAndNotify();
-        } else {
-            // When series changes, the window is no longer valid.
-            // A call to updateWindow with a new range is expected.
-            // For safety, we can clear it or attempt an initial load based on old range if available.
-            // Clearing is safest until a new range is explicitly set.
-            clearWindowAndNotify(); 
-        }
+        // When the series changes the current window is no longer valid; a new range is expected.
+        clearWindowAndNotify();
     }
-    
+
     private void clearWindowAndNotify() {
         clearWindowInternal();
         fireDatasetChanged();
@@ -74,7 +72,11 @@ public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCD
         this.windowItemCount = 0;
     }
 
-    public synchronized void updateWindow(long visibleStartMillis, long visibleEndMillis) {
+    /**
+     * Rebuilds the visible window. The bounds are domain-axis values, which for the index-based
+     * domain axis are bar indices (not timestamps).
+     */
+    public synchronized void updateWindow(long lowerIndexBound, long upperIndexBound) {
         if (fullBarSeries == null || fullBarSeries.isEmpty()) {
             if (windowItemCount > 0) { // If it previously had data, clear it
                 clearWindowAndNotify();
@@ -82,69 +84,32 @@ public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCD
             return;
         }
 
-        int firstVisibleFullIndex = findFirstIndexOnOrAfter(visibleStartMillis);
-        int lastVisibleFullIndex = findLastIndexOnOrBefore(visibleEndMillis);
+        int begin = fullBarSeries.getBeginIndex();
+        int end = fullBarSeries.getEndIndex();
 
-        // Handle cases where the visible range is outside the data
-        if (firstVisibleFullIndex == -1 && lastVisibleFullIndex == -1) { // Entirely outside
-            if (visibleEndMillis < fullBarSeries.getBar(fullBarSeries.getBeginIndex()).getEndTime().toInstant().toEpochMilli()) {
-                firstVisibleFullIndex = fullBarSeries.getBeginIndex(); // Load beginning
-                lastVisibleFullIndex = Math.min(fullBarSeries.getEndIndex(), fullBarSeries.getBeginIndex() + bufferBars);
-            } else if (visibleStartMillis > fullBarSeries.getBar(fullBarSeries.getEndIndex()).getEndTime().toInstant().toEpochMilli()) {
-                lastVisibleFullIndex = fullBarSeries.getEndIndex(); // Load end
-                firstVisibleFullIndex = Math.max(fullBarSeries.getBeginIndex(), fullBarSeries.getEndIndex() - bufferBars);
-            } else { // In a gap or series is truly empty
-                clearWindowAndNotify(); return;
-            }
-        } else if (firstVisibleFullIndex == -1) { // Visible range starts before data
-            firstVisibleFullIndex = fullBarSeries.getBeginIndex();
-        } else if (lastVisibleFullIndex == -1) { // Visible range ends after data
-            lastVisibleFullIndex = fullBarSeries.getEndIndex();
-        }
-        
-        if (firstVisibleFullIndex > lastVisibleFullIndex) { // Should not happen if logic above is correct
-             // Attempt to make a small window around the more 'valid' index if one exists
-            if (fullBarSeries.getBarCount() > 0) {
-                int anchor = (findFirstIndexOnOrAfter(visibleStartMillis) != -1) ? findFirstIndexOnOrAfter(visibleStartMillis) : 
-                             (findLastIndexOnOrBefore(visibleEndMillis) != -1) ? findLastIndexOnOrBefore(visibleEndMillis) : 
-                             fullBarSeries.getBarCount()/2; // fallback to middle
-                anchor = Math.max(fullBarSeries.getBeginIndex(), Math.min(anchor, fullBarSeries.getEndIndex()));
-                firstVisibleFullIndex = anchor;
-                lastVisibleFullIndex = anchor;
-            } else {
-                clearWindowAndNotify(); return;
-            }
+        int firstVisible = clampIndex(lowerIndexBound, begin, end);
+        int lastVisible = clampIndex(upperIndexBound, begin, end);
+        if (firstVisible > lastVisible) {
+            int tmp = firstVisible;
+            firstVisible = lastVisible;
+            lastVisible = tmp;
         }
 
-
-        int newWindowStartFullIndex = Math.max(fullBarSeries.getBeginIndex(), firstVisibleFullIndex - bufferBars);
-        int newWindowEndFullIndex = Math.min(fullBarSeries.getEndIndex(), lastVisibleFullIndex + bufferBars);
-
-        if (newWindowStartFullIndex > newWindowEndFullIndex) { // Final check if range is invalid
-            newWindowStartFullIndex = newWindowEndFullIndex = Math.max(0, Math.min(firstVisibleFullIndex, fullBarSeries.getEndIndex())); // single point
-            if (fullBarSeries.isEmpty()) {clearWindowAndNotify(); return;}
-        }
-        
+        int newWindowStartFullIndex = Math.max(begin, firstVisible - bufferBars);
+        int newWindowEndFullIndex = Math.min(end, lastVisible + bufferBars);
         int newWindowItemCount = newWindowEndFullIndex - newWindowStartFullIndex + 1;
 
-        if (newWindowItemCount <= 0 && !fullBarSeries.isEmpty()) { // Should not happen if series has data
-             log.warn("Calculated window count is {} for non-empty series. Forcing a single point window at start.", newWindowItemCount);
-             newWindowStartFullIndex = fullBarSeries.getBeginIndex();
-             newWindowEndFullIndex = fullBarSeries.getBeginIndex();
-             newWindowItemCount = 1;
-        } else if (newWindowItemCount <= 0 && fullBarSeries.isEmpty()){
-            clearWindowAndNotify(); return;
+        if (newWindowItemCount <= 0) {
+            clearWindowAndNotify();
+            return;
         }
-
 
         // Avoid unnecessary reloads if the window content is identical
         if (newWindowStartFullIndex == this.windowStartFullIndex && newWindowItemCount == this.windowItemCount) {
             return;
         }
-        
-        log.debug("Updating window: FullIdx [{}, {}], Items: {}, VisMs [{}, {}]",
-                newWindowStartFullIndex, newWindowEndFullIndex, newWindowItemCount,
-                new Date(visibleStartMillis), new Date(visibleEndMillis));
+
+        log.debug("Updating window: FullIdx [{}, {}], Items: {}", newWindowStartFullIndex, newWindowEndFullIndex, newWindowItemCount);
 
         this.dates = new Date[newWindowItemCount];
         this.opens = new double[newWindowItemCount];
@@ -169,44 +134,19 @@ public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCD
         fireDatasetChanged();
     }
 
-    private int findFirstIndexOnOrAfter(long timeMillis) {
-        if (fullBarSeries == null || fullBarSeries.isEmpty()) return -1;
-        int begin = fullBarSeries.getBeginIndex();
-        int end = fullBarSeries.getEndIndex();
-        if (timeMillis > fullBarSeries.getBar(end).getEndTime().toInstant().toEpochMilli()) return -1;
-        if (timeMillis <= fullBarSeries.getBar(begin).getEndTime().toInstant().toEpochMilli()) return begin;
-
-        int low = begin, high = end, result = end + 1; // result if no bar is >= timeMillis
-        while (low <= high) {
-            int mid = low + (high - low) / 2;
-            if (fullBarSeries.getBar(mid).getEndTime().toInstant().toEpochMilli() >= timeMillis) {
-                result = mid;
-                high = mid - 1;
-            } else {
-                low = mid + 1;
-            }
-        }
-        return (result > end) ? -1 : result;
+    private static int clampIndex(long value, int begin, int end) {
+        if (value < begin) return begin;
+        if (value > end) return end;
+        return (int) value;
     }
 
-    private int findLastIndexOnOrBefore(long timeMillis) {
-        if (fullBarSeries == null || fullBarSeries.isEmpty()) return -1;
-        int begin = fullBarSeries.getBeginIndex();
-        int end = fullBarSeries.getEndIndex();
-        if (timeMillis < fullBarSeries.getBar(begin).getEndTime().toInstant().toEpochMilli()) return -1;
-        if (timeMillis >= fullBarSeries.getBar(end).getEndTime().toInstant().toEpochMilli()) return end;
-        
-        int low = begin, high = end, result = begin -1; // result if no bar is <= timeMillis
-        while (low <= high) {
-            int mid = low + (high - low) / 2;
-            if (fullBarSeries.getBar(mid).getEndTime().toInstant().toEpochMilli() <= timeMillis) {
-                result = mid;
-                low = mid + 1;
-            } else {
-                high = mid - 1;
-            }
+    /** Maps a domain value (bar index) to the end-time millis of the nearest bar in the full series. */
+    public synchronized long indexToTimeMillis(double domainValue) {
+        if (fullBarSeries == null || fullBarSeries.isEmpty()) {
+            return (long) domainValue;
         }
-        return (result < begin) ? -1 : result;
+        int idx = clampIndex(Math.round(domainValue), fullBarSeries.getBeginIndex(), fullBarSeries.getEndIndex());
+        return fullBarSeries.getBar(idx).getEndTime().toInstant().toEpochMilli();
     }
 
     // --- XYDataset and OHLCDataset implementations ---
@@ -220,8 +160,8 @@ public class DynamicWindowOHLCDataset extends AbstractXYDataset implements OHLCD
         if (item < 0 || item >= windowItemCount) throw new IndexOutOfBoundsException("Invalid item index: " + item + " for window size " + windowItemCount);
     }
 
-    @Override public Number getX(int series, int item) { checkSeriesItem(series, item); return dates[item].getTime(); }
-    @Override public double getXValue(int series, int item) { checkSeriesItem(series, item); return dates[item].getTime(); }
+    @Override public Number getX(int series, int item) { checkSeriesItem(series, item); return windowStartFullIndex + item; }
+    @Override public double getXValue(int series, int item) { checkSeriesItem(series, item); return windowStartFullIndex + item; }
     @Override public Number getY(int series, int item) { checkSeriesItem(series, item); return closes[item]; } // Default Y for XYDataset
     @Override public double getYValue(int series, int item) { checkSeriesItem(series, item); return closes[item]; }
     @Override public Number getHigh(int series, int item) { checkSeriesItem(series, item); return highs[item]; }

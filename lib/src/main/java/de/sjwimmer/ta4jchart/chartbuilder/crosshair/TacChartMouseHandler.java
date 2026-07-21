@@ -162,7 +162,12 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay, Datase
     }
 
     private String createDateString(double xx) {
-        Date date = Date.from(Instant.ofEpochMilli((long) findClosestXValue(xx)));
+        double snapped = findClosestXValue(xx);
+        // The dynamic dataset's X values are bar indices, not timestamps; convert back to a real date.
+        long millis = (dynamicDatasetForCrosshair != null)
+                ? dynamicDatasetForCrosshair.indexToTimeMillis(snapped)
+                : (long) snapped;
+        Date date = Date.from(Instant.ofEpochMilli(millis));
         try {
             return GlobalConstants.DATE_WITH_TIME_FORMATTER.valueToString(date);
         } catch (ParseException e) {
