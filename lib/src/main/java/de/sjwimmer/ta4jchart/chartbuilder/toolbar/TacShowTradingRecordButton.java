@@ -7,20 +7,21 @@ import javax.swing.*;
 import java.awt.*;
 import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
+import java.util.function.IntConsumer;
 
 public class TacShowTradingRecordButton extends JToggleButton implements ActionListener {
 
     private final JPanel mainPanel;
     private final JPanel table;
 
-    public TacShowTradingRecordButton(TradingRecord tradingRecord, JPanel mainPanel) {
+    public TacShowTradingRecordButton(TradingRecord tradingRecord, JPanel mainPanel, IntConsumer onNavigateToBarIndex) {
         super("Trading Record Table");
         this.mainPanel = mainPanel;
         if (tradingRecord == null) {
             this.setEnabled(false);
             this.table = new JPanel(new BorderLayout());
         } else {
-            this.table = new TradingRecordPanel(tradingRecord);
+            this.table = new TradingRecordPanel(tradingRecord, onNavigateToBarIndex);
         }
         setToolTipText("Shows or hides tables with record information about positions and trades");
         addActionListener(this);

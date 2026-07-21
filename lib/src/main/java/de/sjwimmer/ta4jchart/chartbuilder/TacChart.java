@@ -1,5 +1,6 @@
 package de.sjwimmer.ta4jchart.chartbuilder;
 
+import de.sjwimmer.ta4jchart.chartbuilder.axis.BarIndexDateAxis;
 import de.sjwimmer.ta4jchart.chartbuilder.crosshair.TacChartMouseHandler;
 import de.sjwimmer.ta4jchart.chartbuilder.data.DataPanel;
 import de.sjwimmer.ta4jchart.chartbuilder.data.TacDataTableModel;
@@ -101,7 +102,7 @@ public class TacChart extends JPanel {
         tacAutoRangeButton = new TacAutoRangeButton(chart);
         toolBar.add(tacAutoRangeButton);
         toolBar.add(new TacShowDataButton(new DataPanel(tacDataTableModel), this));
-        toolBar.add(new TacShowTradingRecordButton(tradingRecord, this));
+        toolBar.add(new TacShowTradingRecordButton(tradingRecord, this, this::navigateToBarIndex));
         this.tacShowBuySellSignals = new TacShowBuySellSignals(chart, tradingRecord, this, this.chartBuilder);
         toolBar.add(this.tacShowBuySellSignals);
         
@@ -186,5 +187,55 @@ public class TacChart extends JPanel {
         if (this.mouseHandler != null) {
             this.mouseHandler.updateDataset();
         }
+    }
+
+    /**
+     * Pans the chart so the bar at the given full-series index is centered, keeping the current
+     * zoom (visible width). Invoked when a trade is double-clicked in the trading-record tables.
+     *
+     * @param barIndex the index of the bar to scroll to, in the current chart's series
+     */
+    public void navigateToBarIndex(int barIndex) {
+        JFreeChart chart = chartPanel.getChart();
+        if (chart == null) {
+            return;
+        }
+        org.jfree.chart.plot.Plot plot = chart.getPlot();
+        ValueAxis domainAxis = null;
+        if (plot instanceof CombinedDomainXYPlot) {
+            domainAxis = ((CombinedDomainXYPlot) plot).getDomainAxis();
+        } else if (plot instanceof XYPlot) {
+            domainAxis = ((XYPlot) plot).getDomainAxis();
+        }
+        if (domainAxis == null) {
+            return;
+        }
+
+        double width = domainAxis.getRange().getLength();
+        if (width <= 0) {
+            return;
+        }
+
+        double center;
+        if (domainAxis instanceof BarIndexDateAxis) {
+            // Index-based axis: the domain value is the bar index itself.
+            center = barIndex;
+        } else {
+            // Time-based axis: convert the bar index to the bar's end time.
+            BarSeries series = (chartBuilder != null) ? chartBuilder.getCurrentBarSeries() : this.barSeries;
+            if (series == null || series.isEmpty()) {
+                return;
+            }
+            int idx = Math.max(series.getBeginIndex(), Math.min(barIndex, series.getEndIndex()));
+            center = series.getBar(idx).getEndTime().toInstant().toEpochMilli();
+        }
+
+        domainAxis.setRange(center - width / 2.0, center + width / 2.0);
+        domainAxis.setAutoRange(false);
+
+        if (tacAutoRangeButton != null && tacAutoRangeButton.isSelected()) {
+            TacChartUtils.applyAutoRangeState(chart, true);
+        }
+        chartPanel.requestFocusInWindow();
     }
 }
