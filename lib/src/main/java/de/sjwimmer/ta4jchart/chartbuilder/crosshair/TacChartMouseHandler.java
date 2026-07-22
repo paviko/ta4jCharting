@@ -93,7 +93,9 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay, Datase
         final int entriesCount = dataset.getItemCount(0);
         ohlcXValues = new long[entriesCount];
         for(int i = 0; i< entriesCount; i++) {
-            ohlcXValues[i] = (long) dataset.getX(0, i);
+            // getX returns a Number (an Integer for the index-based datasets); a (long) cast on a
+            // Number reference compiles to ((Long) x).longValue() and throws when x is an Integer.
+            ohlcXValues[i] = dataset.getX(0, i).longValue();
         }
     }
 
@@ -198,7 +200,9 @@ public class TacChartMouseHandler implements ChartMouseListener, Overlay, Datase
             final int entriesCount = dataset.getItemCount(0);
             ohlcXValues = new long[entriesCount];
             for (int i = 0; i < entriesCount; i++) {
-                ohlcXValues[i] = (long) dataset.getX(0, i);
+                // .longValue() unboxes any Number; a (long) cast would compile to ((Long) x) and
+                // throw a ClassCastException when getX returns an Integer (it does for index datasets).
+                ohlcXValues[i] = dataset.getX(0, i).longValue();
             }
         }
     }

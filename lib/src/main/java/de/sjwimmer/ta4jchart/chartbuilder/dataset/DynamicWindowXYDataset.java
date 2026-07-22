@@ -97,9 +97,25 @@ public class DynamicWindowXYDataset extends AbstractXYDataset implements IDynami
 
         this.yValues = new double[newWindowItemCount];
 
+        // The indicator is computed on its own bar series, which may differ from the chart's current
+        // series after a timeframe switch (e.g. an M15 channel shown on a D1/M1 chart). When they
+        // differ, indexing the indicator with the chart's index reads an unrelated bar and the line
+        // lands far from the candles, so align by time instead: each candle shows the indicator value
+        // that was current at the candle's close.
+        BarSeries indicatorSeries = indicator.getBarSeries();
+        boolean sameSeries = (indicatorSeries == fullBarSeries);
+
         for (int i = 0; i < newWindowItemCount; i++) {
             int fullSeriesIndex = newWindowStartFullIndex + i;
-            this.yValues[i] = indicator.getValue(fullSeriesIndex).doubleValue();
+            if (sameSeries) {
+                this.yValues[i] = indicator.getValue(fullSeriesIndex).doubleValue();
+            } else {
+                long timeMillis = fullBarSeries.getBar(fullSeriesIndex).getEndTime().toInstant().toEpochMilli();
+                int indicatorIndex = asOfIndexForTime(indicatorSeries, timeMillis);
+                this.yValues[i] = (indicatorIndex >= 0)
+                        ? indicator.getValue(indicatorIndex).doubleValue()
+                        : Double.NaN;
+            }
         }
 
         this.windowStartFullIndex = newWindowStartFullIndex;
@@ -111,6 +127,35 @@ public class DynamicWindowXYDataset extends AbstractXYDataset implements IDynami
         if (value < begin) return begin;
         if (value > end) return end;
         return (int) value;
+    }
+
+    /**
+     * Returns the index of the last bar in {@code series} whose end time is at or before
+     * {@code timeMillis} (an "as-of" lookup), or -1 if the time precedes the series' first bar or
+     * the series is empty. Used to align an indicator computed on one timeframe with candles on
+     * another so each candle shows the indicator value that was current at its close.
+     */
+    private static int asOfIndexForTime(BarSeries series, long timeMillis) {
+        if (series == null || series.isEmpty()) {
+            return -1;
+        }
+        int begin = series.getBeginIndex();
+        int end = series.getEndIndex();
+        if (timeMillis < series.getBar(begin).getEndTime().toInstant().toEpochMilli()) {
+            return -1;
+        }
+        int low = begin;
+        int high = end;
+        while (low < high) {
+            int mid = low + (high - low + 1) / 2; // upper mid to converge on the last matching bar
+            long midTime = series.getBar(mid).getEndTime().toInstant().toEpochMilli();
+            if (midTime <= timeMillis) {
+                low = mid;
+            } else {
+                high = mid - 1;
+            }
+        }
+        return low;
     }
 
     @Override public DomainOrder getDomainOrder() { return DomainOrder.ASCENDING; }
